@@ -1,0 +1,5 @@
+# Pulsar eS Xlite: mouse on its cable (3710:9604) and eS LINK dongle (3710:5602). Lets the
+# logged-in user open their hidraw nodes, so espulse (and Bibimbap in Chrome) work without sudo.
+# Install: sudo cp 71-pulsar-es.rules /etc/udev/rules.d/ && sudo udevadm control --reload,
+# then unplug and replug the mouse cable or dongle.
+KERNEL=="hidraw*", ATTRS{idVendor}=="3710", ATTRS{idProduct}=="9604|5602", TAG+="uaccess"

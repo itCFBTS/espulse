@@ -1,0 +1,12 @@
+[package]
+name = "espulse"
+version = "0.1.0"
+edition = "2024"
+description = "Read-only status tool for the Pulsar eS Xlite mouse on Linux"
+license = "MIT"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+strip = true
