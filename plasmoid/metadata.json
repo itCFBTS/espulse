@@ -1,0 +1,15 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [{ "Name": "itCFBTS" }],
+        "Category": "System Information",
+        "Description": "Current DPI, polling rate and settings of the Pulsar eS Xlite (polls espulse)",
+        "Icon": "input-mouse",
+        "Id": "io.github.itcfbts.espulse",
+        "License": "MIT",
+        "Name": "espulse",
+        "Version": "0.1"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationAreaCategory": "Hardware"
+}

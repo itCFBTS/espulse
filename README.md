@@ -20,6 +20,8 @@ battery       : not decoded yet (see --raw)
 
 - `-v` adds every DPI stage with its LED colour, button codes, and the dongle's function
   button and LED setting.
+- `--json` prints everything `-v` reads as one JSON object (used by the tray widget). Values
+  whose encoding is inferred rather than confirmed are flagged.
 - `--raw` adds the replies that aren't decoded yet, as hex. Battery percentage is one of the
   open questions: run `espulse --raw` at two different charge levels and compare.
 
@@ -51,6 +53,19 @@ Build and install (Rust 1.85+, [rustup](https://rustup.rs)):
 ```bash
 cargo install --path .
 ```
+
+### Plasma widget (KDE Plasma 6 only)
+
+```bash
+kpackagetool6 -t Plasma/Applet -i plasmoid
+```
+
+Then enable **espulse** under the system tray's *Configure System Tray → Entries*, or add it
+from *Add Widgets*. The tray shows the active DPI with a dot in that stage's LED colour; the
+popup shows all DPI stages, polling rate, the toggles, LOD, debounce, rotation and the
+dongle's settings. It refreshes every 5 minutes and when opened. To update after pulling
+changes: `kpackagetool6 -t Plasma/Applet -u plasmoid`, then
+`systemctl --user restart plasma-plasmashell`.
 
 ## License
 

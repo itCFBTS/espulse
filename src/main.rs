@@ -175,17 +175,208 @@ fn polling(code: u8) -> String {
     }
 }
 
+#[derive(Default)]
+struct Stage {
+    n: u8,
+    x: u16,
+    y: u16,
+    colour: Option<[u8; 3]>,
+}
+
+/// Everything espulse reads, gathered once; printed as text or JSON.
+#[derive(Default)]
+struct Status {
+    wireless: bool,
+    node: String,
+    profile: Option<u8>,
+    stage_count: Option<u8>,
+    active_stage: Option<u8>,
+    stages: Vec<Stage>,
+    polling_code: Option<u8>,
+    motion_sync: Option<bool>,
+    turbo: Option<bool>,
+    angle_snap: Option<bool>,
+    lod: Option<u8>,
+    debounce_raw: Option<u8>,
+    rotation: Option<[u8; 2]>,
+    buttons: Vec<(u8, Option<u8>)>,
+    dongle_button: Option<u8>,
+    dongle_led: Option<bool>,
+}
+
+fn collect(m: &Mouse, full: bool) -> Status {
+    let read = |query: Query| m.read(query);
+    let mut st = Status { wireless: m.wireless, node: m.node.display().to_string(), ..Default::default() };
+    st.profile = read(q(0x14, 1)).map(|d| d[0]);
+    if let Some(s) = read(q(0x02, 2)) {
+        st.stage_count = Some(s[0]);
+        st.active_stage = Some(s[1]);
+        for n in 1..=s[0].min(8) {
+            if let Some(d) = read(qa(0x04, 6, n)).filter(|d| d.len() >= 6) {
+                let colour = if full { read(qa(0x03, 4, n)).filter(|c| c.len() >= 4).map(|c| [c[1], c[2], c[3]]) } else { None };
+                st.stages.push(Stage { n, x: u16::from_le_bytes([d[2], d[3]]), y: u16::from_le_bytes([d[4], d[5]]), colour });
+            }
+        }
+    }
+    st.polling_code = read(q(0x07, 1)).map(|d| d[0]);
+    if let Some(d) = read(q(0x08, 2)) {
+        st.turbo = Some(d[0] != 0);
+        st.motion_sync = Some(d[1] != 0);
+    }
+    st.angle_snap = read(q(0x1c, 1)).map(|d| d[0] != 0);
+    st.lod = read(q(0x09, 1)).map(|d| d[0]);
+    st.debounce_raw = read(q(0x05, 1)).map(|d| d[0]);
+    st.rotation = read(q(0x18, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
+    if full {
+        st.buttons = [0xb1u8, 0xb2, 0xb3, 0xb4, 0xb5].iter().map(|&b| (b, read(qa(0x0c, 2, b)).and_then(|d| d.get(1).copied()))).collect();
+        if m.wireless {
+            st.dongle_button = read(q(0x1b, 1)).map(|d| d[0]);
+            st.dongle_led = read(q(0x1e, 1)).map(|d| d[0] != 0);
+        }
+    }
+    st
+}
+
+fn rotation_text(r: [u8; 2]) -> String {
+    match (r[0], r[1]) {
+        (0, 0) => "0°".to_string(),
+        (1, n) => format!("+{n}°"),
+        _ => format!("raw {}", hex(&r)),
+    }
+}
+
+fn dongle_button_name(code: u8) -> &'static str {
+    match code {
+        1 => "Profile",
+        2 => "Polling Rate",
+        3 => "Turbo Mode",
+        _ => "unknown",
+    }
+}
+
+fn print_text(st: &Status, verbose: bool) {
+    let mode = if st.wireless { "wireless (eS LINK dongle)" } else { "wired" };
+    if verbose {
+        println!("Pulsar eS Xlite, {mode}   [{}]", st.node);
+    } else {
+        println!("Pulsar eS Xlite, {mode}");
+    }
+    if let Some(p) = st.profile {
+        println!("profile       : {p}");
+    }
+    if let (Some(count), Some(active)) = (st.stage_count, st.active_stage) {
+        if let Some(s) = st.stages.iter().find(|s| s.n == active) {
+            let dpi = if s.x == s.y { s.x.to_string() } else { format!("{} × {}", s.x, s.y) };
+            println!("dpi           : {dpi}  (stage {active} of {count})");
+        }
+    }
+    if let Some(c) = st.polling_code {
+        println!("polling rate  : {}", polling(c));
+    }
+    if let Some(v) = st.motion_sync {
+        println!("motion sync   : {}", on_off(v as u8));
+    }
+    if let Some(v) = st.turbo {
+        println!("turbo mode    : {}", on_off(v as u8));
+    }
+    if let Some(v) = st.angle_snap {
+        println!("angle snap    : {}", on_off(v as u8));
+    }
+    if let Some(v) = st.lod {
+        let note = if v == 2 { "  (Bibimbap \"Default\")" } else { "" };
+        println!("LOD           : {v}{note}");
+    }
+    if let Some(v) = st.debounce_raw {
+        let t = if v == 0 { "0 ms".to_string() } else { format!("raw {v} (ms scale unconfirmed)") };
+        println!("debounce      : {t}");
+    }
+    if let Some(r) = st.rotation {
+        println!("rotation      : {}", rotation_text(r));
+    }
+    println!("battery       : not decoded yet (see --raw)");
+    if verbose {
+        let list: Vec<String> = st
+            .stages
+            .iter()
+            .map(|s| {
+                let c = s.colour.map(|c| format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])).unwrap_or("?".into());
+                if Some(s.n) == st.active_stage { format!("[{} {c}]", s.x) } else { format!("{} {c}", s.x) }
+            })
+            .collect();
+        println!("dpi stages    : {}  (active bracketed)", list.join("  "));
+        let buttons: Vec<String> = st.buttons.iter().map(|(b, f)| format!("{b:02x}={}", f.map(|v| v.to_string()).unwrap_or("?".into()))).collect();
+        println!("button codes  : {}  (1–5 = factory defaults; mapping unconfirmed)", buttons.join(" "));
+        if let Some(b) = st.dongle_button {
+            println!("dongle button : {}", dongle_button_name(b));
+        }
+        if let Some(v) = st.dongle_led {
+            println!("dongle LED    : {}", on_off(v as u8));
+        }
+    }
+}
+
+fn json_opt<T: ToString>(v: Option<T>) -> String {
+    v.map(|x| x.to_string()).unwrap_or("null".into())
+}
+
+fn json_str(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// Machine-readable output for the tray widget. Values that are only inferred are flagged.
+fn print_json(st: &Status) {
+    let stages: Vec<String> = st
+        .stages
+        .iter()
+        .map(|s| {
+            let c = s.colour.map(|c| json_str(&format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]))).unwrap_or("null".into());
+            format!("{{\"n\":{},\"x\":{},\"y\":{},\"colour\":{c}}}", s.n, s.x, s.y)
+        })
+        .collect();
+    let (hz, hz_confirmed) = match st.polling_code {
+        Some(2) => (Some(1000), true),
+        Some(3) => (Some(2000), true),
+        Some(1) => (Some(500), false),
+        Some(4) => (Some(4000), false),
+        Some(5) => (Some(8000), false),
+        _ => (None, false),
+    };
+    let fields = [
+        format!("\"mode\":{}", json_str(if st.wireless { "wireless" } else { "wired" })),
+        format!("\"profile\":{}", json_opt(st.profile)),
+        format!("\"stage_count\":{}", json_opt(st.stage_count)),
+        format!("\"active_stage\":{}", json_opt(st.active_stage)),
+        format!("\"stages\":[{}]", stages.join(",")),
+        format!("\"polling_code\":{}", json_opt(st.polling_code)),
+        format!("\"polling_hz\":{}", json_opt(hz)),
+        format!("\"polling_hz_confirmed\":{hz_confirmed}"),
+        format!("\"motion_sync\":{}", json_opt(st.motion_sync)),
+        format!("\"turbo\":{}", json_opt(st.turbo)),
+        format!("\"angle_snap\":{}", json_opt(st.angle_snap)),
+        format!("\"lod\":{}", json_opt(st.lod)),
+        format!("\"debounce_raw\":{}", json_opt(st.debounce_raw)),
+        format!("\"rotation\":{}", json_opt(st.rotation.map(|r| json_str(&rotation_text(r))))),
+        format!("\"dongle_button\":{}", json_opt(st.dongle_button.map(|b| json_str(dongle_button_name(b))))),
+        format!("\"dongle_led\":{}", json_opt(st.dongle_led)),
+        "\"battery\":null".to_string(),
+    ];
+    println!("{{{}}}", fields.join(","));
+}
+
 fn main() {
     let mut verbose = false;
     let mut raw = false;
+    let mut json = false;
     for a in std::env::args().skip(1) {
         match a.as_str() {
             "-v" | "--verbose" => verbose = true,
             "--raw" => raw = true,
+            "--json" => json = true,
             "-h" | "--help" => {
                 println!("espulse — read-only status of the Pulsar eS Xlite\n");
                 println!("  -v, --verbose   also show all DPI stages with colours, button codes and dongle settings");
                 println!("  --raw           also dump the replies we haven't decoded yet (battery research)");
+                println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
                 return;
             }
             other => {
@@ -195,92 +386,12 @@ fn main() {
         }
     }
     let m = open_mouse();
-    let read = |query: Query| m.read(query);
-    let mode = if m.wireless { "wireless (eS LINK dongle)" } else { "wired" };
-    if verbose {
-        println!("Pulsar eS Xlite, {mode}   [{}]", m.node.display());
-    } else {
-        println!("Pulsar eS Xlite, {mode}");
+    let st = collect(&m, verbose || json);
+    if json {
+        print_json(&st);
+        return;
     }
-
-    if let Some(d) = read(q(0x14, 1)) {
-        println!("profile       : {}", d[0]);
-    }
-    let stages = read(q(0x02, 2));
-    let mut dpis: Vec<(u8, u16, u16)> = Vec::new();
-    if let Some(s) = &stages {
-        let (count, active) = (s[0], s[1]);
-        for i in 1..=count.min(8) {
-            if let Some(d) = read(qa(0x04, 6, i)) {
-                if d.len() >= 6 {
-                    dpis.push((i, u16::from_le_bytes([d[2], d[3]]), u16::from_le_bytes([d[4], d[5]])));
-                }
-            }
-        }
-        if let Some((_, x, y)) = dpis.iter().find(|(i, _, _)| *i == active) {
-            let dpi = if x == y { x.to_string() } else { format!("{x} × {y}") };
-            println!("dpi           : {dpi}  (stage {active} of {count})");
-        }
-    }
-    if let Some(d) = read(q(0x07, 1)) {
-        println!("polling rate  : {}", polling(d[0]));
-    }
-    if let Some(d) = read(q(0x08, 2)) {
-        println!("motion sync   : {}", on_off(d[1]));
-        println!("turbo mode    : {}", on_off(d[0]));
-    }
-    if let Some(d) = read(q(0x1c, 1)) {
-        println!("angle snap    : {}", on_off(d[0]));
-    }
-    if let Some(d) = read(q(0x09, 1)) {
-        let note = if d[0] == 2 { "  (Bibimbap \"Default\")" } else { "" };
-        println!("LOD           : {}{note}", d[0]);
-    }
-    if let Some(d) = read(q(0x05, 1)) {
-        let v = if d[0] == 0 { "0 ms".to_string() } else { format!("raw {} (ms scale unconfirmed)", d[0]) };
-        println!("debounce      : {v}");
-    }
-    if let Some(d) = read(q(0x18, 2)) {
-        let v = match (d[0], d[1]) {
-            (0, 0) => "0°".to_string(),
-            (1, n) => format!("+{n}°"),
-            _ => format!("raw {}", hex(&d)),
-        };
-        println!("rotation      : {v}");
-    }
-    println!("battery       : not decoded yet (see --raw)");
-
-    if verbose {
-        let colours: Vec<String> = (1..=dpis.len() as u8)
-            .map(|i| read(qa(0x03, 4, i)).filter(|d| d.len() >= 4).map(|d| format!("#{:02x}{:02x}{:02x}", d[1], d[2], d[3])).unwrap_or("?".into()))
-            .collect();
-        let active = stages.as_ref().map(|s| s[1]).unwrap_or(0);
-        let list: Vec<String> = dpis
-            .iter()
-            .zip(&colours)
-            .map(|((i, x, _), c)| if *i == active { format!("[{x} {c}]") } else { format!("{x} {c}") })
-            .collect();
-        println!("dpi stages    : {}  (active bracketed)", list.join("  "));
-        let buttons: Vec<String> = [0xb1u8, 0xb2, 0xb3, 0xb4, 0xb5]
-            .iter()
-            .map(|&b| read(qa(0x0c, 2, b)).map(|d| format!("{:02x}={}", b, d.get(1).copied().unwrap_or(0))).unwrap_or(format!("{b:02x}=?")))
-            .collect();
-        println!("button codes  : {}  (1–5 = factory defaults; mapping unconfirmed)", buttons.join(" "));
-        if m.wireless {
-            if let Some(d) = read(q(0x1b, 1)) {
-                let f = match d[0] {
-                    1 => "Profile",
-                    2 => "Polling Rate",
-                    3 => "Turbo Mode",
-                    _ => "unknown",
-                };
-                println!("dongle button : {f}");
-            }
-            if let Some(d) = read(q(0x1e, 1)) {
-                println!("dongle LED    : {}", on_off(d[0]));
-            }
-        }
-    }
+    print_text(&st, verbose);
 
     if raw {
         println!("\nundecoded replies (same reads Bibimbap makes):");
@@ -289,7 +400,7 @@ fn main() {
             unknown.push(q(0x10, 1));
         }
         for u in unknown {
-            match read(u) {
+            match m.read(u) {
                 Some(d) => println!("  0x{:02x}: {}", u.op, hex(&d)),
                 None => println!("  0x{:02x}: no reply", u.op),
             }
