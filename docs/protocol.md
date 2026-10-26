@@ -34,7 +34,7 @@ command), **matched** (value equals what Bibimbap displays), or **inferred** (fi
 | `0x1f` | 2 | `00 05` with LED effect Off, brightness 5 | inferred |
 | `0x0c` | 2 | per button `b1`…`b5`: `<button> <function>`; all defaults (1–5) | inferred (button map) |
 | `0x06` | 1 | `1` (not the profile — that is `0x14`) | unknown |
-| `0x01` | 2 | `56 00` (86) — battery was charging; page later showed 100% | unknown |
+| `0x01` | 2 | `56 00` (86) both times the battery was at ~100% | unknown (battery candidate, not a plain %) |
 | `0x0b` | 1 | `0x14` (20) — no matching value on any page | unknown |
 | `0x0d`, `0x0f`, `0x10` | 2, 1, 1 | `30 00`, `01`, `00`; `0x10` only seen over the dongle | unknown |
 | `0x1d` | 5 | polled every ~0.7 s throughout; last reply changed `…00` → `…01` | unknown (live status) |
@@ -46,10 +46,10 @@ command), **matched** (value equals what Bibimbap displays), or **inferred** (fi
 - Handshake order starts with `0x0d` (`30 00`), `0x0f` (`01`), `0x1e` (`01`, read ×3), and also
   reads `0x10` (`00`, not seen wired) and `0x1b` (`01`). `0x1b` and `0x1e` confirmed by a write
   round (function button, LED); every value restored afterwards.
-- `0x01` = `56 00` (86) again while Bibimbap showed **100%, not charging** → `0x01` is not a
-  plain battery percentage. No reply contained 100 (`0x64`), and all interrupt reports were
-  motion (report id 1), so how the page derives battery % is still unknown. Test: compare
-  replies at two different battery levels.
+- `0x01` = `56 00` (86) again while Bibimbap showed **100%, not charging**. Both sightings of
+  `0x56` were at (or right next to) 100%, so it is not a plain percentage but could still be a
+  raw/scaled battery value — one charge level can't tell. No reply contained 100 (`0x64`), and
+  all interrupt reports were motion (report id 1). Test: compare replies at a lower charge.
 - `0x1d` polled ~every 0.5 s, all zeros over the dongle.
 
 ## Not yet tested
