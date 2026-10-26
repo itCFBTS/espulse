@@ -1,5 +1,6 @@
-// espulse — tray widget polling `espulse --json` (read-only queries, the same ones Bibimbap
-// makes on connect). Polls every 5 min and when the popup opens; battery isn't decoded yet.
+// espulse — tray widget. In the background it only asks `espulse --battery` (one read query
+// once battery is decoded; nothing at all until then). The full read (`espulse --json`, the
+// same queries Bibimbap makes on connect) runs only when the popup opens.
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
@@ -14,9 +15,12 @@ PlasmoidItem {
     property var st: null          // last good status from espulse --json
     property string err: "querying…"
     property string lastUpdate: ""
+    property int battery: -1      // -1 = unknown / not decoded yet
 
     // Runs through /bin/sh; Plasma's PATH often lacks the per-user bin dirs.
-    readonly property string cmd: 'PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" espulse --json'
+    readonly property string bin: 'PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" espulse'
+    readonly property string cmdFull: bin + " --json"
+    readonly property string cmdBattery: bin + " --battery"
 
     readonly property var activeStage: {
         if (!st || !st.stages) return null
@@ -38,6 +42,11 @@ PlasmoidItem {
         onNewData: function (source, data) {
             disconnectSource(source)
             const code = data["exit code"]
+            if (source === root.cmdBattery) {
+                const v = parseInt((data["stdout"] || "").trim())
+                root.battery = code === 0 && !isNaN(v) ? v : -1
+                return
+            }
             if (code === 127) {
                 root.err = "espulse not installed"
                 return
@@ -60,17 +69,16 @@ PlasmoidItem {
         }
     }
 
-    function refresh() { exec.connectSource(cmd) }
+    function refresh() { exec.connectSource(cmdFull) }
+    function refreshBattery() { exec.connectSource(cmdBattery) }
 
-    Timer { interval: 5 * 60 * 1000; running: true; repeat: true; onTriggered: root.refresh() }
-    Component.onCompleted: refresh()
-    onExpandedChanged: { if (root.expanded) refresh() }
+    Timer { interval: 5 * 60 * 1000; running: true; repeat: true; onTriggered: root.refreshBattery() }
+    Component.onCompleted: refreshBattery()
+    onExpandedChanged: { if (root.expanded) { refresh(); refreshBattery() } }
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
-    toolTipMainText: st ? ("Pulsar eS Xlite · " + dpiText + " DPI") : ("espulse: " + err)
-    toolTipSubText: st
-        ? ((st.polling_hz ? st.polling_hz + " Hz" : "polling ?") + " · " + st.mode + (lastUpdate ? " · updated " + lastUpdate : ""))
-        : ""
+    toolTipMainText: "Pulsar eS Xlite" + (battery >= 0 ? " · " + battery + "%" : "")
+    toolTipSubText: battery >= 0 ? "" : "battery not decoded yet · click for settings"
 
     compactRepresentation: MouseArea {
         id: compactRoot
@@ -87,11 +95,12 @@ PlasmoidItem {
             Kirigami.Icon {
                 anchors.fill: parent
                 source: "input-mouse-symbolic"
-                opacity: 0.45
+                opacity: root.battery >= 0 ? 0.45 : 1.0
             }
             PC3.Label {
                 anchors.centerIn: parent
-                text: root.dpiShort
+                visible: root.battery >= 0
+                text: root.battery
                 font.bold: true
                 fontSizeMode: Text.Fit
                 minimumPointSize: 6
@@ -100,12 +109,6 @@ PlasmoidItem {
                 style: Text.Outline
                 styleColor: Kirigami.Theme.backgroundColor
             }
-            Rectangle {
-                width: Math.max(4, parent.width / 4); height: width; radius: width / 2
-                anchors { right: parent.right; bottom: parent.bottom }
-                color: root.stageColour
-                visible: root.st !== null
-            }
         }
 
         RowLayout {
@@ -113,13 +116,12 @@ PlasmoidItem {
             anchors.centerIn: parent
             visible: !compactRoot.tight
             spacing: Kirigami.Units.smallSpacing
-            Rectangle {
-                Layout.preferredWidth: Kirigami.Units.iconSizes.small / 2
-                Layout.preferredHeight: Layout.preferredWidth
-                radius: width / 2
-                color: root.stageColour
+            Kirigami.Icon {
+                source: "input-mouse-symbolic"
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
             }
-            PC3.Label { text: root.st ? root.dpiText + " DPI" : "–" }
+            PC3.Label { visible: root.battery >= 0; text: root.battery + "%" }
         }
     }
 
@@ -256,7 +258,7 @@ PlasmoidItem {
                 label: "Dongle button · LED"
                 value: root.st ? (root.st.dongle_button || "?") + " · " + (root.st.dongle_led ? "on" : "off") : ""
             }
-            InfoRow { label: "Battery"; value: "not decoded yet" }
+            InfoRow { label: "Battery"; value: root.battery >= 0 ? root.battery + "%" : "not decoded yet" }
         }
 
         Item { Layout.fillHeight: true }

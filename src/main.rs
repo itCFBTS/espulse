@@ -367,16 +367,19 @@ fn main() {
     let mut verbose = false;
     let mut raw = false;
     let mut json = false;
+    let mut battery_only = false;
     for a in std::env::args().skip(1) {
         match a.as_str() {
             "-v" | "--verbose" => verbose = true,
             "--raw" => raw = true,
             "--json" => json = true,
+            "-b" | "--battery" => battery_only = true,
             "-h" | "--help" => {
                 println!("espulse — read-only status of the Pulsar eS Xlite\n");
                 println!("  -v, --verbose   also show all DPI stages with colours, button codes and dongle settings");
                 println!("  --raw           also dump the replies we haven't decoded yet (battery research)");
                 println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
+                println!("  -b, --battery   battery % only (for scripts/widgets); exit 3 = not decoded yet");
                 return;
             }
             other => {
@@ -384,6 +387,12 @@ fn main() {
                 exit(2);
             }
         }
+    }
+    if battery_only {
+        // The battery reading hasn't been identified yet, so this sends nothing to the mouse.
+        // Once it is, this becomes a single read query.
+        eprintln!("battery not decoded yet");
+        exit(3);
     }
     let m = open_mouse();
     let st = collect(&m, verbose || json);
