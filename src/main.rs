@@ -263,7 +263,8 @@ fn dongle_button_name(code: u8) -> &'static str {
     }
 }
 
-fn print_text(st: &Status, verbose: bool) {
+/// `show_raw` adds the raw bytes behind decoded values (just battery so far).
+fn print_text(st: &Status, verbose: bool, show_raw: bool) {
     let mode = if st.wireless { "wireless (eS LINK dongle)" } else { "wired" };
     if verbose {
         println!("Pulsar eS Xlite, {mode}   [{}]", st.node);
@@ -304,6 +305,7 @@ fn print_text(st: &Status, verbose: bool) {
     }
     match st.battery_raw {
         Some(r) => match battery_percent(r) {
+            Some(pct) if show_raw => println!("battery       : {pct}%  (0x0b = {r:02x}, {r} × 5)"),
             Some(pct) => println!("battery       : {pct}%"),
             None => println!("battery       : unexpected reply 0x{r:02x}"),
         },
@@ -422,7 +424,7 @@ fn main() {
         print_json(&st);
         return;
     }
-    print_text(&st, verbose);
+    print_text(&st, verbose, raw || verbose);
 
     if raw {
         println!("\nundecoded replies (same reads Bibimbap makes):");
