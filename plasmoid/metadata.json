@@ -3,8 +3,8 @@
     "KPlugin": {
         "Authors": [{ "Name": "itCFBTS" }],
         "Category": "System Information",
-        "Description": "Current DPI, polling rate and settings of the Pulsar eS Xlite (polls espulse)",
-        "Icon": "input-mouse",
+        "Description": "Battery and settings of the Pulsar eS Xlite (read-only, via espulse)",
+        "Icon": "espulse",
         "Id": "io.github.itcfbts.espulse",
         "License": "MIT",
         "Name": "espulse",

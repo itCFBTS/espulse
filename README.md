@@ -59,7 +59,11 @@ cargo install --path .
 
 ```bash
 kpackagetool6 -t Plasma/Applet -i plasmoid
+install -Dm644 plasmoid/contents/icons/es-xlite.svg ~/.local/share/icons/hicolor/scalable/apps/espulse.svg
 ```
+
+The second line installs the eS Xlite icon used in the widget list and tray settings (the tray
+icon itself comes from inside the widget).
 
 Then enable **espulse** under the system tray's *Configure System Tray → Entries*, or add it
 from *Add Widgets*. In the background it only asks for the battery level every 5 minutes

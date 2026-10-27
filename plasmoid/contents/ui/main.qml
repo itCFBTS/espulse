@@ -21,6 +21,8 @@ PlasmoidItem {
     readonly property string bin: 'PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" espulse'
     readonly property string cmdFull: bin + " --json"
     readonly property string cmdBattery: bin + " --battery"
+    // Top-down eS Xlite outline, Breeze symbolic style (recoloured to the theme's text colour).
+    readonly property url mouseIcon: Qt.resolvedUrl("../icons/es-xlite.svg")
 
     readonly property var activeStage: {
         if (!st || !st.stages) return null
@@ -95,7 +97,9 @@ PlasmoidItem {
             visible: compactRoot.tight
             Kirigami.Icon {
                 anchors.fill: parent
-                source: "input-mouse-symbolic"
+                source: root.mouseIcon
+                isMask: true
+                color: Kirigami.Theme.textColor
                 opacity: root.battery >= 0 ? 0.45 : 1.0
             }
             PC3.Label {
@@ -118,7 +122,9 @@ PlasmoidItem {
             visible: !compactRoot.tight
             spacing: Kirigami.Units.smallSpacing
             Kirigami.Icon {
-                source: "input-mouse-symbolic"
+                source: root.mouseIcon
+                isMask: true
+                color: Kirigami.Theme.textColor
                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
             }
