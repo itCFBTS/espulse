@@ -164,13 +164,14 @@ fn hex(d: &[u8]) -> String {
 }
 
 fn polling(code: u8) -> String {
-    // 2 and 3 confirmed by changing the setting; the rest follow the page's order.
+    // 2 and 3 confirmed by changing the setting, 5 matched to Bibimbap showing 8KHz; 1 and 4 follow
+    // the page's order.
     match code {
         2 => "1000 Hz".into(),
         3 => "2000 Hz".into(),
         1 => "500 Hz (code 1, inferred)".into(),
         4 => "4000 Hz (code 4, inferred)".into(),
-        5 => "8000 Hz (code 5, inferred)".into(),
+        5 => "8000 Hz".into(),
         c => format!("unknown code {c}"),
     }
 }
@@ -352,7 +353,7 @@ fn print_json(st: &Status) {
         Some(3) => (Some(2000), true),
         Some(1) => (Some(500), false),
         Some(4) => (Some(4000), false),
-        Some(5) => (Some(8000), false),
+        Some(5) => (Some(8000), true),
         _ => (None, false),
     };
     let fields = [

@@ -22,7 +22,7 @@ command), **matched** (value equals what Bibimbap displays), or **inferred** (fi
 | `0x02` | 2 | stage count, active stage (1-based) — `06 02` = 6 stages, stage 2 | matched |
 | `0x03` | 4 | per stage: `<stage> R G B` stage colour | matched (6/6) |
 | `0x04` | 6 | per stage: `<stage> 01 <X u16-LE> <Y u16-LE>` DPI | matched (6/6); the `01` byte unknown |
-| `0x07` | 1 | polling rate: 2 = 1 kHz, 3 = 2 kHz | confirmed; 500 Hz = 1, 4 kHz = 4, 8 kHz = 5 inferred |
+| `0x07` | 1 | polling rate: 2 = 1 kHz, 3 = 2 kHz, 5 = 8 kHz | 1k/2k confirmed; 8 kHz matched (2026-10-27); 500 Hz = 1, 4 kHz = 4 inferred |
 | `0x08` | 2 | byte 0 = Turbo Mode, byte 1 = Motion Sync (0/1) | confirmed |
 | `0x1c` | 1 | Angle Snap (0/1) | confirmed |
 | `0x14` | 1 | active profile: 1 → `01`, 2 → `02` | confirmed |
@@ -58,7 +58,7 @@ command), **matched** (value equals what Bibimbap displays), or **inferred** (fi
 
 ## Not yet tested
 
-Debounce ms scale, LOD scale beyond two points, negative rotation, 500 Hz / 4 kHz / 8 kHz
+Debounce ms scale, LOD scale beyond two points, negative rotation, 500 Hz / 4 kHz
 codes, battery while charging / over the cable, `0x1d`, the reads seen only during a profile switch, and the dongle
 (wireless) path. Write captures: 2026-10-26 round 1 (Motion Sync, Angle Snap, Turbo, polling)
 and round 2 (debounce, LOD, rotation, profile); every setting was restored afterwards.
