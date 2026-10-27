@@ -34,8 +34,8 @@ command), **matched** (value equals what Bibimbap displays), or **inferred** (fi
 | `0x1f` | 2 | `00 05` with LED effect Off, brightness 5 | inferred |
 | `0x0c` | 2 | per button `b1`…`b5`: `<button> <function>`; all defaults (1–5) | inferred (button map) |
 | `0x06` | 1 | `1` (not the profile — that is `0x14`) | unknown |
-| `0x01` | 2 | `56 00` (86) both times the battery was at ~100% | unknown (battery candidate, not a plain %) |
-| `0x0b` | 1 | `0x14` (20) — no matching value on any page | unknown |
+| `0x0b` | 1 | battery in 5% steps: `0x14` (20) = 100%, `0x0e` (14) = 70% | matched (2 levels) |
+| `0x01` | 2 | `56 00` (86) at both 100% and 70% battery | unknown (not battery) |
 | `0x0d`, `0x0f`, `0x10` | 2, 1, 1 | `30 00`, `01`, `00`; `0x10` only seen over the dongle | unknown |
 | `0x1d` | 5 | polled every ~0.7 s throughout; last reply changed `…00` → `…01` | unknown (live status) |
 
@@ -50,11 +50,15 @@ command), **matched** (value equals what Bibimbap displays), or **inferred** (fi
   `0x56` were at (or right next to) 100%, so it is not a plain percentage but could still be a
   raw/scaled battery value — one charge level can't tell. No reply contained 100 (`0x64`), and
   all interrupt reports were motion (report id 1). Test: compare replies at a lower charge.
+- 2026-10-27, wireless, Bibimbap showing **70%**: only `0x0b` had changed, `0x14` → `0x0e`
+  (20 → 14; × 5 = 100 → 70). `0x01` stayed `56 00`, so it isn't battery. Settings had changed
+  between the two readings (8 kHz, Turbo on, 4 stages), but landing exactly on
+  the displayed % by coincidence is unlikely. Untested: the value while charging, and over the cable.
 - `0x1d` polled ~every 0.5 s, all zeros over the dongle.
 
 ## Not yet tested
 
 Debounce ms scale, LOD scale beyond two points, negative rotation, 500 Hz / 4 kHz / 8 kHz
-codes, battery / `0x1d`, the reads seen only during a profile switch, and the dongle
+codes, battery while charging / over the cable, `0x1d`, the reads seen only during a profile switch, and the dongle
 (wireless) path. Write captures: 2026-10-26 round 1 (Motion Sync, Angle Snap, Turbo, polling)
 and round 2 (debounce, LOD, rotation, profile); every setting was restored afterwards.

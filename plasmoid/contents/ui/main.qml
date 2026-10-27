@@ -1,6 +1,6 @@
-// espulse — tray widget. In the background it only asks `espulse --battery` (one read query
-// once battery is decoded; nothing at all until then). The full read (`espulse --json`, the
-// same queries Bibimbap makes on connect) runs only when the popup opens.
+// espulse — tray widget. In the background it only asks `espulse --battery` (one read query).
+// The full read (`espulse --json`, the same queries Bibimbap makes on connect) runs only when
+// the popup opens, and its battery value refreshes the icon too.
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
@@ -15,7 +15,7 @@ PlasmoidItem {
     property var st: null          // last good status from espulse --json
     property string err: "querying…"
     property string lastUpdate: ""
-    property int battery: -1      // -1 = unknown / not decoded yet
+    property int battery: -1      // -1 = unknown
 
     // Runs through /bin/sh; Plasma's PATH often lacks the per-user bin dirs.
     readonly property string bin: 'PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" espulse'
@@ -61,6 +61,7 @@ PlasmoidItem {
             }
             try {
                 root.st = JSON.parse(data["stdout"])
+                if (root.st.battery !== null) root.battery = root.st.battery
                 root.err = ""
                 root.lastUpdate = new Date().toLocaleTimeString(Qt.locale(), "hh:mm")
             } catch (e) {
@@ -74,11 +75,11 @@ PlasmoidItem {
 
     Timer { interval: 5 * 60 * 1000; running: true; repeat: true; onTriggered: root.refreshBattery() }
     Component.onCompleted: refreshBattery()
-    onExpandedChanged: { if (root.expanded) { refresh(); refreshBattery() } }
+    onExpandedChanged: { if (root.expanded) refresh() }
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
     toolTipMainText: "Pulsar eS Xlite" + (battery >= 0 ? " · " + battery + "%" : "")
-    toolTipSubText: battery >= 0 ? "" : "battery not decoded yet · click for settings"
+    toolTipSubText: battery >= 0 ? "click for settings" : "battery unknown · click for settings"
 
     compactRepresentation: MouseArea {
         id: compactRoot
@@ -88,7 +89,7 @@ PlasmoidItem {
         onPressed: wasExpanded = root.expanded
         onClicked: root.expanded = !wasExpanded
 
-        // Narrow tray slot: mouse icon, short DPI on top, stage colour dot in the corner.
+        // Narrow tray slot: mouse icon, battery % on top.
         Item {
             anchors.fill: parent
             visible: compactRoot.tight
@@ -258,7 +259,7 @@ PlasmoidItem {
                 label: "Dongle button · LED"
                 value: root.st ? (root.st.dongle_button || "?") + " · " + (root.st.dongle_led ? "on" : "off") : ""
             }
-            InfoRow { label: "Battery"; value: root.battery >= 0 ? root.battery + "%" : "not decoded yet" }
+            InfoRow { label: "Battery"; value: root.battery >= 0 ? root.battery + "%" : "unknown" }
         }
 
         Item { Layout.fillHeight: true }

@@ -15,17 +15,16 @@ angle snap    : off
 LOD           : 2  (Bibimbap "Default")
 debounce      : 0 ms
 rotation      : 0°
-battery       : not decoded yet (see --raw)
+battery       : 70%
 ```
 
 - `-v` adds every DPI stage with its LED colour, button codes, and the dongle's function
   button and LED setting.
-- `--battery` is for scripts and the tray widget. Battery isn't decoded yet, so for now it
-  sends nothing to the mouse and exits with code 3.
+- `--battery` prints just the battery percentage, for scripts and the tray widget. It sends
+  one read query. The mouse reports battery in 5% steps.
 - `--json` prints everything `-v` reads as one JSON object (used by the tray widget). Values
   whose encoding is inferred rather than confirmed are flagged.
-- `--raw` adds the replies that aren't decoded yet, as hex. Battery percentage is one of the
-  open questions: run `espulse --raw` at two different charge levels and compare.
+- `--raw` adds the replies that aren't decoded yet, as hex.
 
 > Not affiliated with or endorsed by Pulsar. Protocol reverse-engineered from USB captures of
 > Pulsar's web driver (Bibimbap); tested on mouse and dongle firmware V1.0.
@@ -64,7 +63,7 @@ kpackagetool6 -t Plasma/Applet -i plasmoid
 
 Then enable **espulse** under the system tray's *Configure System Tray → Entries*, or add it
 from *Add Widgets*. In the background it only asks for the battery level every 5 minutes
-(nothing at all until battery is decoded), shown over a mouse icon. Opening the popup runs
+(one read query), shown over a mouse icon. Opening the popup runs
 the full read: all DPI stages, polling rate, the toggles, LOD, debounce, rotation and the
 dongle's settings. To update after pulling
 changes: `kpackagetool6 -t Plasma/Applet -u plasmoid`, then

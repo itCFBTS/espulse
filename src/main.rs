@@ -124,7 +124,8 @@ fn find_candidates() -> Vec<(PathBuf, bool)> {
     found.into_iter().map(|(_, p, w)| (p, w)).collect()
 }
 
-fn open_mouse() -> Mouse {
+/// Opens the mouse and returns it with the reply to `probe`, the first read sent to each candidate.
+fn open_mouse(probe: Query) -> (Mouse, Vec<u8>) {
     let candidates = find_candidates();
     if candidates.is_empty() {
         eprintln!("Pulsar eS Xlite not found: plug in the dongle or the mouse cable.");
@@ -134,9 +135,8 @@ fn open_mouse() -> Mouse {
         match OpenOptions::new().read(true).write(true).open(node) {
             Ok(file) => {
                 let m = Mouse { file, node: node.clone(), wireless: *wireless };
-                // Probe with the first read Bibimbap makes (active profile).
-                if m.read(q(0x14, 1)).is_some() {
-                    return m;
+                if let Some(d) = m.read(probe) {
+                    return (m, d);
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
@@ -175,6 +175,12 @@ fn polling(code: u8) -> String {
     }
 }
 
+/// Battery level from opcode 0x0b, which counts in 5% steps: Bibimbap showed 100% when it read
+/// 20 (0x14) and 70% when it read 14 (0x0e). Anything above 20 is not a level we've seen.
+fn battery_percent(raw: u8) -> Option<u8> {
+    (raw <= 20).then(|| raw * 5)
+}
+
 #[derive(Default)]
 struct Stage {
     n: u8,
@@ -202,6 +208,7 @@ struct Status {
     buttons: Vec<(u8, Option<u8>)>,
     dongle_button: Option<u8>,
     dongle_led: Option<bool>,
+    battery_raw: Option<u8>,
 }
 
 fn collect(m: &Mouse, full: bool) -> Status {
@@ -227,6 +234,7 @@ fn collect(m: &Mouse, full: bool) -> Status {
     st.lod = read(q(0x09, 1)).map(|d| d[0]);
     st.debounce_raw = read(q(0x05, 1)).map(|d| d[0]);
     st.rotation = read(q(0x18, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
+    st.battery_raw = read(q(0x0b, 1)).map(|d| d[0]);
     if full {
         st.buttons = [0xb1u8, 0xb2, 0xb3, 0xb4, 0xb5].iter().map(|&b| (b, read(qa(0x0c, 2, b)).and_then(|d| d.get(1).copied()))).collect();
         if m.wireless {
@@ -293,7 +301,13 @@ fn print_text(st: &Status, verbose: bool) {
     if let Some(r) = st.rotation {
         println!("rotation      : {}", rotation_text(r));
     }
-    println!("battery       : not decoded yet (see --raw)");
+    match st.battery_raw {
+        Some(r) => match battery_percent(r) {
+            Some(pct) => println!("battery       : {pct}%"),
+            None => println!("battery       : unexpected reply 0x{r:02x}"),
+        },
+        None => println!("battery       : no reply"),
+    }
     if verbose {
         let list: Vec<String> = st
             .stages
@@ -358,7 +372,7 @@ fn print_json(st: &Status) {
         format!("\"rotation\":{}", json_opt(st.rotation.map(|r| json_str(&rotation_text(r))))),
         format!("\"dongle_button\":{}", json_opt(st.dongle_button.map(|b| json_str(dongle_button_name(b))))),
         format!("\"dongle_led\":{}", json_opt(st.dongle_led)),
-        "\"battery\":null".to_string(),
+        format!("\"battery\":{}", json_opt(st.battery_raw.and_then(battery_percent))),
     ];
     println!("{{{}}}", fields.join(","));
 }
@@ -377,9 +391,9 @@ fn main() {
             "-h" | "--help" => {
                 println!("espulse — read-only status of the Pulsar eS Xlite\n");
                 println!("  -v, --verbose   also show all DPI stages with colours, button codes and dongle settings");
-                println!("  --raw           also dump the replies we haven't decoded yet (battery research)");
+                println!("  --raw           also dump the replies we haven't decoded yet, as hex");
                 println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
-                println!("  -b, --battery   battery % only (for scripts/widgets); exit 3 = not decoded yet");
+                println!("  -b, --battery   battery % only, one read query (for scripts/widgets); exit 3 = unexpected reply");
                 return;
             }
             other => {
@@ -389,12 +403,19 @@ fn main() {
         }
     }
     if battery_only {
-        // The battery reading hasn't been identified yet, so this sends nothing to the mouse.
-        // Once it is, this becomes a single read query.
-        eprintln!("battery not decoded yet");
-        exit(3);
+        // The battery read doubles as the probe, so this is the only query sent.
+        let (_, d) = open_mouse(q(0x0b, 1));
+        match battery_percent(d[0]) {
+            Some(pct) => println!("{pct}"),
+            None => {
+                eprintln!("unexpected battery reply 0x{:02x}", d[0]);
+                exit(3);
+            }
+        }
+        return;
     }
-    let m = open_mouse();
+    // Probe with the first read Bibimbap makes (active profile).
+    let (m, _) = open_mouse(q(0x14, 1));
     let st = collect(&m, verbose || json);
     if json {
         print_json(&st);
@@ -404,7 +425,7 @@ fn main() {
 
     if raw {
         println!("\nundecoded replies (same reads Bibimbap makes):");
-        let mut unknown = vec![q(0x01, 2), q(0x06, 1), q(0x0b, 1), q(0x0d, 2), q(0x0f, 1), q(0x1d, 5), q(0x1f, 2)];
+        let mut unknown = vec![q(0x01, 2), q(0x06, 1), q(0x0d, 2), q(0x0f, 1), q(0x1d, 5), q(0x1f, 2)];
         if m.wireless {
             unknown.push(q(0x10, 1));
         }
@@ -452,6 +473,14 @@ mod tests {
         assert_eq!(parse_reply(0x14, &[0x00, 0x00, 0x00, 0x00, 0x88, 0x0f]), None); // wired
         assert_eq!(parse_reply(0x14, &[0x0e, 0xa5, 0xff]), None); // dongle
         assert_eq!(parse_reply(0x14, &[0x0e, 0xa5, 0x07, 0x01, 0x01, 0x02]), None); // other op
+    }
+
+    #[test]
+    fn battery_steps() {
+        assert_eq!(battery_percent(0x14), Some(100)); // Bibimbap: 100%
+        assert_eq!(battery_percent(0x0e), Some(70)); // Bibimbap: 70%
+        assert_eq!(battery_percent(0), Some(0));
+        assert_eq!(battery_percent(0xff), None);
     }
 
     #[test]
