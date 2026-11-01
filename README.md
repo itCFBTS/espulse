@@ -1,7 +1,7 @@
 # espulse
 
-A gentle, read-only pulse for your **Pulsar eS Xlite** on Linux: prints the mouse's current
-settings over its cable or the eS LINK dongle.
+Read-only status tool for the **Pulsar eS Xlite** on Linux. Prints the mouse's battery and
+current settings over its cable or the eS LINK dongle.
 
 ```console
 $ espulse
