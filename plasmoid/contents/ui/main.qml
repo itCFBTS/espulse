@@ -1,4 +1,4 @@
-// espulse — tray widget. In the background it only asks `espulse --battery` (one read query).
+// espulse — tray widget. In the background it only asks `espulse --battery` (one or two read queries).
 // The full read (`espulse --json`, the same queries Bibimbap makes on connect) runs only when
 // the popup opens, and its battery value refreshes the icon too.
 import QtQuick

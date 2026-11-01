@@ -513,7 +513,7 @@ fn main() {
                 println!("  -v, --verbose   also show all DPI stages with colours, button codes and dongle settings");
                 println!("  --raw           also dump every reply received, as hex");
                 println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
-                println!("  -b, --battery   battery % only, one read query (for scripts/widgets); exit 3 = unexpected reply");
+                println!("  -b, --battery   battery % only, one or two read queries (for scripts/widgets); exit 3 = unexpected reply");
                 return;
             }
             other => {

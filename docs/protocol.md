@@ -96,6 +96,3 @@ Bibimbap's device list routes these to the same page: VID `3710` PIDs `9501`, `9
 - **Mouse switched off:** presumably the same as on its cable (`0x0f` = `00`, `ff` to
   everything else). Not checked.
 - **`0x10` when full:** whether it drops to `00` once charging finishes.
-
-Write captures: 2026-10-26 rounds 1–2 and 2026-10-31 round A. Every setting was restored
-afterwards, except stage 4 (3200 × 3600) and Enable X-Y, which the user chose to keep.

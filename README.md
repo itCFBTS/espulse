@@ -21,7 +21,7 @@ battery       : 70%
 - `-v` adds every DPI stage with its LED colour, the mouse LED, button functions, the dongle's
   function button and LED setting, and firmware build numbers.
 - `--battery` prints just the battery percentage, for scripts and the tray widget. It sends
-  one read query. The mouse reports battery in 5% steps.
+  one read query (two over the dongle, which is first asked whether it has a mouse). The mouse reports battery in 5% steps.
 - `--json` prints everything `-v` reads as one JSON object (used by the tray widget).
 - `--raw` adds every reply received, as hex.
 
@@ -71,7 +71,7 @@ icon itself comes from inside the widget).
 
 Then enable **espulse** under the system tray's *Configure System Tray → Entries*, or add it
 from *Add Widgets*. In the background it only asks for the battery level every 5 minutes
-(one read query), shown over a mouse icon. Opening the popup runs
+(one or two read queries), shown over a mouse icon. Opening the popup runs
 the full read: all DPI stages, polling rate, the toggles, LOD, debounce, rotation and the
 dongle's settings. To update after pulling
 changes: `kpackagetool6 -t Plasma/Applet -u plasmoid`, then
