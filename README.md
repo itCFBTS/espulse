@@ -37,6 +37,9 @@ that builds a write. Decoded protocol, with where each meaning comes from:
 
 Only one program can talk to the mouse at a time, so close any Bibimbap tab first.
 
+With the mouse on its cable espulse reads it over the cable, where it also reports charging.
+The battery level reads high while charging.
+
 ## Install
 
 udev rule, so your user can open the mouse without sudo:

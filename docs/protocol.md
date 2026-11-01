@@ -43,11 +43,11 @@ Names are Bibimbap's function names. Byte offsets are into `<data…>`.
 | `0x08` | 2 | `readSensorSetting` | byte 0 = "gaming" mode, shown as Turbo Mode; byte 1 = Motion Sync | confirmed |
 | `0x09` | 1 | `readLod` | 0.7 / 0.8 / 1.0 / 1.2 / 1.4 mm = 1 / 2 / 4 / 7 / 11. 0.8 mm is "Default" | confirmed |
 | `0x0a` | 2 | `readMousePid` | mouse USB PID, u16 LE. Bibimbap never calls it | source only |
-| `0x0b` | 1 | `readBatteryLevel` | battery = value × 5 %. `ff` = no reading yet | source + matched |
+| `0x0b` | 1 | `readBatteryLevel` | battery = value × 5 %. `ff` = no reading yet. Runs high while charging | source + matched |
 | `0x0c` | 2 | `readMacroSetting` | per button `<button> <function>`, see below | confirmed |
 | `0x0d` | 2 | `readDongleFirmwareVersion` | dongle firmware build: `30 00` = 0030, same as its USB bcdDevice | source + matched |
-| `0x0f` | 1 | `readWirelessStatus` | `01` = mouse connected to the dongle | source + matched |
-| `0x10` | 1 | `readBatteryChargingStatus` | `01` = charging. Read over the dongle only | source |
+| `0x0f` | 1 | `readWirelessStatus` | `01` = mouse connected to the dongle, `00` = none (e.g. mouse on its cable). Dongle only | confirmed |
+| `0x10` | 1 | `readBatteryChargingStatus` | `01` = charging. Bibimbap asks the dongle, but the mouse answers it over its cable too | confirmed (cable) |
 | `0x14` | 1 | `readCurrentProfile` | active profile 1–4 | confirmed |
 | `0x15` | 4 | `readProfileOnStatus` | which of profiles 1–4 are enabled. Bibimbap never reads it | source only |
 | `0x18` | 2 | `readAngleTune` | rotation: byte 0 = on, byte 1 = signed degrees (−30…30). −5° = `01 fb`, +30° = `01 1e`, 0° = `00 00` | confirmed |
@@ -77,6 +77,15 @@ followed by a `0x14` write of the current profile, apparently to save it.
   page (it flags changes made on the mouse itself). Nothing unprompted arrived on the interrupt
   endpoint except motion.
 
+## Cable and dongle both plugged in (2026-10-31)
+
+The mouse shows up as `9604` (bcdDevice `0x0056`, the same build as `0x01`) and the dongle as
+`5602` (bcdDevice `0x0030`). The dongle answers its own reads (`0x0f` = `00`, `0x0d` = `30 00`)
+and `0e a5 ff` (not ready) to everything it would have to ask the mouse. The cable doesn't
+answer the dongle-only reads (`0x0d`, `0x0f`). Over the cable `0x10` = `01` (charging). The
+battery read rose 85 → 90 → 95 → 100 % within ~10 minutes of plugging in, so the level runs
+high while charging.
+
 ## Other devices
 
 Bibimbap's device list routes these to the same page: VID `3710` PIDs `9501`, `9502`, `9503`,
@@ -84,10 +93,9 @@ Bibimbap's device list routes these to the same page: VID `3710` PIDs `9501`, `9
 
 ## Not yet tested
 
-- **Charging:** `0x10` (and whether `0x0b` changes) with the cable plugged in while connected
-  over the dongle.
-- **Wired reads:** `0x0b` over the cable, and the mouse's own bcdDevice.
-- **No link:** what the dongle answers with the mouse switched off (`0x0f` = 0? `0x0b` = `ff`?).
+- **Mouse switched off:** presumably the same as on its cable (`0x0f` = `00`, `ff` to
+  everything else). Not checked.
+- **`0x10` when full:** whether it drops to `00` once charging finishes.
 
 Write captures: 2026-10-26 rounds 1–2 and 2026-10-31 round A. Every setting was restored
 afterwards, except stage 4 (3200 × 3600) and Enable X-Y, which the user chose to keep.

@@ -104,7 +104,8 @@ impl Mouse {
     }
 }
 
-/// hidraw nodes of the mouse or dongle, the config interface (bInterfaceNumber 01) first.
+/// hidraw nodes of the mouse or dongle: the cable before the dongle (with both plugged in, the
+/// dongle has no mouse to ask), and within each the config interface (bInterfaceNumber 01) first.
 fn find_candidates() -> Vec<(PathBuf, bool)> {
     let mut found: Vec<(u8, PathBuf, bool)> = Vec::new();
     let Ok(rd) = fs::read_dir("/sys/class/hidraw") else { return Vec::new() };
@@ -125,21 +126,28 @@ fn find_candidates() -> Vec<(PathBuf, bool)> {
             .unwrap_or(0xFF);
         found.push((iface, PathBuf::from("/dev").join(entry.file_name()), wireless));
     }
-    found.sort_by_key(|(i, _, _)| if *i == 1 { 0 } else { 1 + *i as u16 });
+    found.sort_by_key(|(i, _, w)| (*w, if *i == 1 { 0 } else { 1 + *i as u16 }));
     found.into_iter().map(|(_, p, w)| (p, w)).collect()
 }
 
 /// Opens the mouse and returns it with the reply to `probe`, the first read sent to each candidate.
+/// The dongle is first asked whether it has a mouse (0x0f, which it answers itself); without one,
+/// every read it would pass on only gets "not ready".
 fn open_mouse(probe: Query) -> (Mouse, Vec<u8>) {
     let candidates = find_candidates();
     if candidates.is_empty() {
         eprintln!("Pulsar eS Xlite not found: plug in the dongle or the mouse cable.");
         exit(1);
     }
+    let mut no_link = false;
     for (node, wireless) in &candidates {
         match OpenOptions::new().read(true).write(true).open(node) {
             Ok(file) => {
                 let m = Mouse { file, node: node.clone(), wireless: *wireless, log: RefCell::default() };
+                if m.wireless && m.read(q(0x0f, 1)).is_some_and(|d| d[0] == 0) {
+                    no_link = true;
+                    continue;
+                }
                 if let Some(d) = m.read(probe) {
                     return (m, d);
                 }
@@ -154,9 +162,13 @@ fn open_mouse(probe: Query) -> (Mouse, Vec<u8>) {
             Err(e) => eprintln!("note: cannot open {} ({e})", node.display()),
         }
     }
-    eprintln!(
-        "No reply from the mouse. Is Bibimbap open in a browser tab? Close it (only one program can talk to the mouse at a time). If wireless, move the mouse to wake it."
-    );
+    if no_link {
+        eprintln!("The eS LINK dongle has no mouse connected: the mouse is off, asleep, or on its cable.");
+    } else {
+        eprintln!(
+            "No reply from the mouse. Is Bibimbap open in a browser tab? Close it (only one program can talk to the mouse at a time). If wireless, move the mouse to wake it."
+        );
+    }
     exit(1);
 }
 
@@ -265,7 +277,6 @@ struct Status {
     buttons: Vec<(u8, Option<u8>)>,
     dongle_button: Option<u8>,
     dongle_led: Option<bool>,
-    linked: Option<bool>,
     charging: Option<bool>,
     battery_raw: Option<u8>,
     mouse_fw: Option<String>,
@@ -297,11 +308,9 @@ fn collect(m: &Mouse, full: bool) -> Status {
     st.rotation = read(q(0x18, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
     st.xy_linked = read(q(0x06, 1)).map(|d| d[0] == 1);
     st.battery_raw = read(q(0x0b, 1)).map(|d| d[0]);
-    if m.wireless {
-        // Bibimbap reads these only over the dongle.
-        st.linked = read(q(0x0f, 1)).map(|d| d[0] == 1);
-        st.charging = read(q(0x10, 1)).map(|d| d[0] == 1);
-    }
+    // Bibimbap reads charging only over the dongle, but the dongle can't answer it while the mouse is
+    // on its cable, which is when it charges; over the cable the mouse answers it itself.
+    st.charging = read(q(0x10, 1)).map(|d| d[0] == 1);
     if full {
         st.led = read(q(0x1f, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
         st.buttons = BUTTONS.iter().map(|&(b, _)| (b, read(qa(0x0c, 2, b)).and_then(|d| d.get(1).copied()))).collect();
@@ -399,9 +408,6 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
     if st.charging == Some(true) {
         println!("charging      : yes");
     }
-    if st.linked == Some(false) {
-        println!("link          : dongle reports no mouse connected");
-    }
     if verbose {
         let list: Vec<String> = st
             .stages
@@ -485,7 +491,6 @@ fn print_json(st: &Status) {
         format!("\"dongle_led\":{}", json_opt(st.dongle_led)),
         format!("\"battery\":{}", json_opt(st.battery_raw.and_then(battery_percent))),
         format!("\"charging\":{}", json_opt(st.charging)),
-        format!("\"linked\":{}", json_opt(st.linked)),
         format!("\"mouse_fw\":{}", json_opt(st.mouse_fw.as_deref().map(json_str))),
         format!("\"dongle_fw\":{}", json_opt(st.dongle_fw.as_deref().map(json_str))),
     ];
@@ -518,7 +523,7 @@ fn main() {
         }
     }
     if battery_only {
-        // The battery read doubles as the probe, so this is the only query sent.
+        // The battery read doubles as the probe (over the dongle, after the link check).
         let (_, d) = open_mouse(q(0x0b, 1));
         match battery_percent(d[0]) {
             Some(pct) => println!("{pct}"),
