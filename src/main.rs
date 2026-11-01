@@ -274,11 +274,11 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
     if let Some(p) = st.profile {
         println!("profile       : {p}");
     }
-    if let (Some(count), Some(active)) = (st.stage_count, st.active_stage) {
-        if let Some(s) = st.stages.iter().find(|s| s.n == active) {
-            let dpi = if s.x == s.y { s.x.to_string() } else { format!("{} × {}", s.x, s.y) };
-            println!("dpi           : {dpi}  (stage {active} of {count})");
-        }
+    if let (Some(count), Some(active)) = (st.stage_count, st.active_stage)
+        && let Some(s) = st.stages.iter().find(|s| s.n == active)
+    {
+        let dpi = if s.x == s.y { s.x.to_string() } else { format!("{} × {}", s.x, s.y) };
+        println!("dpi           : {dpi}  (stage {active} of {count})");
     }
     if let Some(c) = st.polling_code {
         println!("polling rate  : {}", polling(c));

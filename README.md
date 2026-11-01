@@ -21,7 +21,8 @@ battery       : 70%
 - `-v` adds every DPI stage with its LED colour, button codes, and the dongle's function
   button and LED setting.
 - `--battery` prints just the battery percentage, for scripts and the tray widget. It sends
-  one read query. The mouse reports battery in 5% steps.
+  one read query. The mouse appears to report battery in 5% steps (matched to Bibimbap at
+  100% and 70%).
 - `--json` prints everything `-v` reads as one JSON object (used by the tray widget). Values
   whose encoding is inferred rather than confirmed are flagged.
 - `--raw` adds the replies that aren't decoded yet, as hex.
@@ -54,6 +55,8 @@ Build and install (Rust 1.85+, [rustup](https://rustup.rs)):
 ```bash
 cargo install --path .
 ```
+
+This puts `espulse` in `~/.cargo/bin`. The tray widget looks there and in `~/.local/bin`.
 
 ### Plasma widget (KDE Plasma 6 only)
 

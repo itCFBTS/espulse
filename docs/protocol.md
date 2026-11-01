@@ -1,7 +1,8 @@
 # Pulsar eS Xlite (3710:9604, wired) — config protocol notes
 
 Captured 2026-10-26 with usbmon while Pulsar's web driver (Bibimbap, bbb.pulsar.gg, Chrome
-WebHID) talked to the mouse over its USB cable. Mouse firmware V1.0. Dongle not yet captured.
+WebHID) talked to the mouse over its USB cable, then over the eS LINK dongle (see below).
+Mouse and dongle firmware V1.0.
 Each entry says how it was established: **confirmed** (changed the setting and saw the
 command), **matched** (value equals what Bibimbap displays), or **inferred** (fits, untested).
 
@@ -59,6 +60,6 @@ command), **matched** (value equals what Bibimbap displays), or **inferred** (fi
 ## Not yet tested
 
 Debounce ms scale, LOD scale beyond two points, negative rotation, 500 Hz / 4 kHz
-codes, battery while charging / over the cable, `0x1d`, the reads seen only during a profile switch, and the dongle
-(wireless) path. Write captures: 2026-10-26 round 1 (Motion Sync, Angle Snap, Turbo, polling)
+codes, battery while charging / over the cable, whether battery is always in 5% steps, `0x1d`,
+and the reads seen only during a profile switch. Write captures: 2026-10-26 round 1 (Motion Sync, Angle Snap, Turbo, polling)
 and round 2 (debounce, LOD, rotation, profile); every setting was restored afterwards.

@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 description = "Read-only status tool for the Pulsar eS Xlite mouse on Linux"
 license = "MIT"
+rust-version = "1.85"
+repository = "https://github.com/itCFBTS/espulse"
+readme = "README.md"
+keywords = ["pulsar", "mouse", "hidraw", "battery", "linux"]
+categories = ["command-line-utilities", "hardware-support"]
 
 [dependencies]
 libc = "0.2"
