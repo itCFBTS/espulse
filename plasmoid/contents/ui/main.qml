@@ -250,15 +250,21 @@ PlasmoidItem {
             InfoRow { label: "Motion sync"; value: root.st && root.st.motion_sync ? "On" : "Off" }
             InfoRow { label: "Turbo mode"; value: root.st && root.st.turbo ? "On" : "Off" }
             InfoRow { label: "Angle snap"; value: root.st && root.st.angle_snap ? "On" : "Off" }
-            InfoRow { label: "LOD"; value: root.st ? (root.st.lod_mm !== null ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
-            InfoRow { label: "Debounce"; value: root.st ? (root.st.debounce_ms !== null ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
+            InfoRow { label: "LOD"; value: root.st ? (typeof root.st.lod_mm === "number" ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
+            InfoRow { label: "Debounce"; value: root.st ? (typeof root.st.debounce_ms === "number" ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
             InfoRow { label: "Rotation"; value: root.st && root.st.rotation ? root.st.rotation : "" }
             InfoRow {
                 visible: root.st && root.st.mode === "wireless"
                 label: "Dongle button · LED"
                 value: root.st ? (root.st.dongle_button || "?") + " · " + (root.st.dongle_led ? "on" : "off") : ""
             }
-            InfoRow { label: "Battery"; value: root.battery >= 0 ? root.battery + "%" + (root.st && root.st.charging ? " · charging" : "") : "unknown" }
+            // Battery and charging from the same full read, so the charging note can't outlive it.
+            InfoRow {
+                label: "Battery"
+                value: root.st && typeof root.st.battery === "number"
+                    ? root.st.battery + "%" + (root.st.charging ? " · charging" : "")
+                    : (root.battery >= 0 ? root.battery + "%" : "unknown")
+            }
         }
 
         Item { Layout.fillHeight: true }

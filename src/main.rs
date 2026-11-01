@@ -67,12 +67,15 @@ fn hid_ioc(nr: libc::c_ulong, len: usize) -> libc::c_ulong {
     (3 << 30) | ((len as libc::c_ulong) << 16) | ((b'H' as libc::c_ulong) << 8) | nr
 }
 
+/// Replies in the order they arrived, with the query that asked for each.
+type ReplyLog = RefCell<Vec<(Query, Vec<u8>)>>;
+
 struct Mouse {
     file: File,
     node: PathBuf,
     wireless: bool,
-    /// Every reply received, in order, for --raw.
-    log: RefCell<Vec<(Query, Vec<u8>)>>,
+    /// Every reply received, in order; kept only for --raw.
+    log: Option<ReplyLog>,
 }
 
 impl Mouse {
@@ -94,8 +97,11 @@ impl Mouse {
                 if n < 0 {
                     return None;
                 }
-                if let Some(d) = parse_reply(query.op, &buf[..n as usize]) {
-                    self.log.borrow_mut().push((query, d.clone()));
+                // A reply shorter than asked for isn't an answer; callers index into it.
+                if let Some(d) = parse_reply(query.op, &buf[..n as usize]).filter(|d| d.len() >= query.len as usize) {
+                    if let Some(log) = &self.log {
+                        log.borrow_mut().push((query, d.clone()));
+                    }
                     return Some(d);
                 }
             }
@@ -133,7 +139,7 @@ fn find_candidates() -> Vec<(PathBuf, bool)> {
 /// Opens the mouse and returns it with the reply to `probe`, the first read sent to each candidate.
 /// The dongle is first asked whether it has a mouse (0x0f, which it answers itself); without one,
 /// every read it would pass on only gets "not ready".
-fn open_mouse(probe: Query) -> (Mouse, Vec<u8>) {
+fn open_mouse(probe: Query, keep_log: bool) -> (Mouse, Vec<u8>) {
     let candidates = find_candidates();
     if candidates.is_empty() {
         eprintln!("Pulsar eS Xlite not found: plug in the dongle or the mouse cable.");
@@ -143,7 +149,7 @@ fn open_mouse(probe: Query) -> (Mouse, Vec<u8>) {
     for (node, wireless) in &candidates {
         match OpenOptions::new().read(true).write(true).open(node) {
             Ok(file) => {
-                let m = Mouse { file, node: node.clone(), wireless: *wireless, log: RefCell::default() };
+                let m = Mouse { file, node: node.clone(), wireless: *wireless, log: keep_log.then(RefCell::default) };
                 if m.wireless && m.read(q(0x0f, 1)).is_some_and(|d| d[0] == 0) {
                     no_link = true;
                     continue;
@@ -274,7 +280,8 @@ struct Status {
     rotation: Option<[u8; 2]>,
     xy_linked: Option<bool>,
     led: Option<[u8; 2]>,
-    buttons: Vec<(u8, Option<u8>)>,
+    /// (button name, function code) for each 0x0c selector.
+    buttons: Vec<(&'static str, Option<u8>)>,
     dongle_button: Option<u8>,
     dongle_led: Option<bool>,
     charging: Option<bool>,
@@ -291,8 +298,8 @@ fn collect(m: &Mouse, full: bool) -> Status {
         st.stage_count = Some(s[0]);
         st.active_stage = Some(s[1]);
         for n in 1..=s[0].min(8) {
-            if let Some(d) = read(qa(0x04, 6, n)).filter(|d| d.len() >= 6) {
-                let colour = if full { read(qa(0x03, 4, n)).filter(|c| c.len() >= 4).map(|c| [c[1], c[2], c[3]]) } else { None };
+            if let Some(d) = read(qa(0x04, 6, n)) {
+                let colour = if full { read(qa(0x03, 4, n)).map(|c| [c[1], c[2], c[3]]) } else { None };
                 st.stages.push(Stage { n, x: u16::from_le_bytes([d[2], d[3]]), y: u16::from_le_bytes([d[4], d[5]]), colour });
             }
         }
@@ -305,15 +312,15 @@ fn collect(m: &Mouse, full: bool) -> Status {
     st.angle_snap = read(q(0x1c, 1)).map(|d| d[0] != 0);
     st.lod = read(q(0x09, 1)).map(|d| d[0]);
     st.debounce_raw = read(q(0x05, 1)).map(|d| d[0]);
-    st.rotation = read(q(0x18, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
+    st.rotation = read(q(0x18, 2)).map(|d| [d[0], d[1]]);
     st.xy_linked = read(q(0x06, 1)).map(|d| d[0] == 1);
     st.battery_raw = read(q(0x0b, 1)).map(|d| d[0]);
     // Bibimbap reads charging only over the dongle, but the dongle can't answer it while the mouse is
     // on its cable, which is when it charges; over the cable the mouse answers it itself.
     st.charging = read(q(0x10, 1)).map(|d| d[0] == 1);
     if full {
-        st.led = read(q(0x1f, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
-        st.buttons = BUTTONS.iter().map(|&(b, _)| (b, read(qa(0x0c, 2, b)).and_then(|d| d.get(1).copied()))).collect();
+        st.led = read(q(0x1f, 2)).map(|d| [d[0], d[1]]);
+        st.buttons = BUTTONS.iter().map(|&(b, name)| (name, read(qa(0x0c, 2, b)).map(|d| d[1]))).collect();
         st.mouse_fw = read(q(0x01, 2)).as_deref().and_then(firmware);
         if m.wireless {
             st.dongle_fw = read(q(0x0d, 2)).as_deref().and_then(firmware);
@@ -327,7 +334,7 @@ fn collect(m: &Mouse, full: bool) -> Status {
 /// Opcode 0x18: byte 0 = rotation on, byte 1 = signed degrees (Bibimbap's range is -30..30).
 fn rotation_text(r: [u8; 2]) -> String {
     match (r[0], r[1] as i8) {
-        (0, _) | (_, 0) => "0°".to_string(),
+        (0, _) | (1, 0) => "0°".to_string(),
         (1, n) => format!("{n:+}°"),
         _ => format!("raw {}", hex(&r)),
     }
@@ -424,10 +431,7 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
         let buttons: Vec<String> = st
             .buttons
             .iter()
-            .map(|&(b, f)| {
-                let name = BUTTONS.iter().find(|(c, _)| *c == b).map(|(_, n)| *n).unwrap_or("?");
-                format!("{name}={}", f.map(button_function).unwrap_or("?"))
-            })
+            .map(|&(name, f)| format!("{name}={}", f.map(button_function).unwrap_or("?")))
             .collect();
         println!("buttons       : {}", buttons.join("  "));
         if let Some(b) = st.dongle_button {
@@ -483,7 +487,7 @@ fn print_json(st: &Status) {
             "\"buttons\":{{{}}}",
             st.buttons
                 .iter()
-                .filter_map(|&(b, f)| Some(format!("{}:{}", json_str(BUTTONS.iter().find(|(c, _)| *c == b)?.1), json_str(button_function(f?)))))
+                .filter_map(|&(name, f)| Some(format!("{}:{}", json_str(name), json_str(button_function(f?)))))
                 .collect::<Vec<_>>()
                 .join(",")
         ),
@@ -510,8 +514,8 @@ fn main() {
             "-b" | "--battery" => battery_only = true,
             "-h" | "--help" => {
                 println!("espulse — read-only status of the Pulsar eS Xlite\n");
-                println!("  -v, --verbose   also show all DPI stages with colours, button codes and dongle settings");
-                println!("  --raw           also dump every reply received, as hex");
+                println!("  -v, --verbose   also show DPI stage colours, mouse LED, button functions, dongle settings and firmware");
+                println!("  --raw           also dump every reply received, as hex (reads what -v reads)");
                 println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
                 println!("  -b, --battery   battery % only, one or two read queries (for scripts/widgets); exit 3 = unexpected reply");
                 return;
@@ -524,7 +528,7 @@ fn main() {
     }
     if battery_only {
         // The battery read doubles as the probe (over the dongle, after the link check).
-        let (_, d) = open_mouse(q(0x0b, 1));
+        let (_, d) = open_mouse(q(0x0b, 1), false);
         match battery_percent(d[0]) {
             Some(pct) => println!("{pct}"),
             None => {
@@ -535,8 +539,8 @@ fn main() {
         return;
     }
     // Probe with the first read Bibimbap makes (active profile).
-    let (m, _) = open_mouse(q(0x14, 1));
-    let st = collect(&m, verbose || json);
+    let (m, _) = open_mouse(q(0x14, 1), raw);
+    let st = collect(&m, verbose || json || raw);
     if json {
         print_json(&st);
         return;
@@ -545,9 +549,9 @@ fn main() {
 
     if raw {
         println!("\nraw replies:");
-        for (query, d) in m.log.borrow().iter() {
+        for (query, d) in m.log.iter().flat_map(|log| log.borrow().clone()) {
             let arg = query.arg.map(|a| format!(" [{a:02x}]")).unwrap_or_default();
-            println!("  0x{:02x}{arg}: {}", query.op, hex(d));
+            println!("  0x{:02x}{arg}: {}", query.op, hex(&d));
         }
     }
 }
@@ -602,6 +606,7 @@ mod tests {
         assert_eq!(rotation_text([0x01, 0xe2]), "-30°");
         assert_eq!(rotation_text([0x01, 0x1e]), "+30°");
         assert_eq!(rotation_text([0x00, 0x00]), "0°");
+        assert_eq!(rotation_text([0x02, 0x00]), "raw 02 00"); // unknown enable byte stays visible
         assert_eq!(lod_mm(2), Some("0.8"));
         assert_eq!(lod_mm(11), Some("1.4"));
         assert_eq!(debounce_ms(2), Some(4));
