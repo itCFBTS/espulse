@@ -2,9 +2,11 @@
 //!
 //! Every packet it sends is one of the read queries Pulsar's web driver (Bibimbap) sends when it
 //! connects, copied byte for byte from USB captures. The direction byte is always 0x01 (read);
-//! there is no code path that builds a write. Protocol notes: docs/protocol.md.
+//! there is no code path that builds a write. Field meanings follow Bibimbap's own source
+//! (opcode names, lookup tables) and were checked against captures. Protocol notes: docs/protocol.md.
 //! Needs the hidraw uaccess udev rule from udev/71-pulsar-es.rules (no sudo).
 
+use std::cell::RefCell;
 use std::fs::{self, File, OpenOptions};
 use std::os::fd::AsRawFd;
 use std::path::PathBuf;
@@ -51,7 +53,7 @@ fn packet(query: Query) -> [u8; REPORT_LEN] {
 }
 
 /// Data bytes of a reply that answers `op`, or None if it is a "not ready" reply
-/// (wired: 00 00 00 00 88 0f; dongle: 0e a5 ff).
+/// (wired: 00 00 00 00 88 0f; dongle: 0e a5 ff) or a "busy" one (our op with direction 03).
 fn parse_reply(op: u8, r: &[u8]) -> Option<Vec<u8>> {
     if r.len() < 5 || r[0] != REPORT_ID || r[1] != MAGIC || r[2] != op || r[3] != DIR_READ {
         return None;
@@ -69,6 +71,8 @@ struct Mouse {
     file: File,
     node: PathBuf,
     wireless: bool,
+    /// Every reply received, in order, for --raw.
+    log: RefCell<Vec<(Query, Vec<u8>)>>,
 }
 
 impl Mouse {
@@ -91,6 +95,7 @@ impl Mouse {
                     return None;
                 }
                 if let Some(d) = parse_reply(query.op, &buf[..n as usize]) {
+                    self.log.borrow_mut().push((query, d.clone()));
                     return Some(d);
                 }
             }
@@ -134,7 +139,7 @@ fn open_mouse(probe: Query) -> (Mouse, Vec<u8>) {
     for (node, wireless) in &candidates {
         match OpenOptions::new().read(true).write(true).open(node) {
             Ok(file) => {
-                let m = Mouse { file, node: node.clone(), wireless: *wireless };
+                let m = Mouse { file, node: node.clone(), wireless: *wireless, log: RefCell::default() };
                 if let Some(d) = m.read(probe) {
                     return (m, d);
                 }
@@ -163,23 +168,72 @@ fn hex(d: &[u8]) -> String {
     d.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")
 }
 
-fn polling(code: u8) -> String {
-    // 2 and 3 confirmed by changing the setting, 5 matched to Bibimbap showing 8KHz; 1 and 4 follow
-    // the page's order.
+/// Polling rate in Hz for opcode 0x07 (Bibimbap's table; its page offers 500 Hz and up).
+fn polling_hz(code: u8) -> Option<u32> {
     match code {
-        2 => "1000 Hz".into(),
-        3 => "2000 Hz".into(),
-        1 => "500 Hz (code 1, inferred)".into(),
-        4 => "4000 Hz (code 4, inferred)".into(),
-        5 => "8000 Hz".into(),
-        c => format!("unknown code {c}"),
+        0 => Some(125),
+        1 => Some(500),
+        2 => Some(1000),
+        3 => Some(2000),
+        4 => Some(4000),
+        5 => Some(8000),
+        _ => None,
     }
 }
 
-/// Battery level from opcode 0x0b, which counts in 5% steps: Bibimbap showed 100% when it read
-/// 20 (0x14) and 70% when it read 14 (0x0e). Anything above 20 is not a level we've seen.
+fn polling(code: u8) -> String {
+    polling_hz(code).map(|hz| format!("{hz} Hz")).unwrap_or_else(|| format!("unknown code {code}"))
+}
+
+/// Battery level from opcode 0x0b, in 5% steps (Bibimbap multiplies by 5). 0xff means the mouse has
+/// no reading yet; anything else above 20 is not a level Bibimbap expects.
 fn battery_percent(raw: u8) -> Option<u8> {
     (raw <= 20).then(|| raw * 5)
+}
+
+/// Lift-off distance in mm for opcode 0x09 (Bibimbap's table; 0.8 mm is its "Default").
+fn lod_mm(code: u8) -> Option<&'static str> {
+    match code {
+        1 => Some("0.7"),
+        2 => Some("0.8"),
+        4 => Some("1.0"),
+        7 => Some("1.2"),
+        11 => Some("1.4"),
+        _ => None,
+    }
+}
+
+/// Debounce in ms for opcode 0x05: Bibimbap writes 0, 2 and 4 ms as 0, 1 and 2.
+fn debounce_ms(code: u8) -> Option<u8> {
+    (code <= 2).then(|| code * 2)
+}
+
+/// Button function for opcode 0x0c (Bibimbap's list).
+fn button_function(code: u8) -> &'static str {
+    match code {
+        1 => "Left Click",
+        2 => "Right Click",
+        3 => "Wheel Click",
+        4 => "Backward",
+        5 => "Forward",
+        6 => "Disable",
+        7 => "Page Down",
+        8 => "Full Screenshot",
+        9 => "Region Capture",
+        10 => "Cut",
+        11 => "Copy",
+        12 => "Paste",
+        _ => "unknown",
+    }
+}
+
+/// Physical button for each 0x0c selector.
+const BUTTONS: [(u8, &str); 5] = [(0xb1, "left"), (0xb2, "right"), (0xb3, "wheel"), (0xb4, "back"), (0xb5, "forward")];
+
+/// Firmware build as Bibimbap formats it (high byte then low, in hex): `56 00` → "0056". Pulsar's
+/// server maps builds to the version Bibimbap shows (0056 and dongle 0030 both show as V1.0).
+fn firmware(d: &[u8]) -> Option<String> {
+    (d.len() >= 2).then(|| format!("{:02x}{:02x}", d[1], d[0]))
 }
 
 #[derive(Default)]
@@ -206,10 +260,16 @@ struct Status {
     lod: Option<u8>,
     debounce_raw: Option<u8>,
     rotation: Option<[u8; 2]>,
+    xy_linked: Option<bool>,
+    led: Option<[u8; 2]>,
     buttons: Vec<(u8, Option<u8>)>,
     dongle_button: Option<u8>,
     dongle_led: Option<bool>,
+    linked: Option<bool>,
+    charging: Option<bool>,
     battery_raw: Option<u8>,
+    mouse_fw: Option<String>,
+    dongle_fw: Option<String>,
 }
 
 fn collect(m: &Mouse, full: bool) -> Status {
@@ -235,10 +295,19 @@ fn collect(m: &Mouse, full: bool) -> Status {
     st.lod = read(q(0x09, 1)).map(|d| d[0]);
     st.debounce_raw = read(q(0x05, 1)).map(|d| d[0]);
     st.rotation = read(q(0x18, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
+    st.xy_linked = read(q(0x06, 1)).map(|d| d[0] == 1);
     st.battery_raw = read(q(0x0b, 1)).map(|d| d[0]);
+    if m.wireless {
+        // Bibimbap reads these only over the dongle.
+        st.linked = read(q(0x0f, 1)).map(|d| d[0] == 1);
+        st.charging = read(q(0x10, 1)).map(|d| d[0] == 1);
+    }
     if full {
-        st.buttons = [0xb1u8, 0xb2, 0xb3, 0xb4, 0xb5].iter().map(|&b| (b, read(qa(0x0c, 2, b)).and_then(|d| d.get(1).copied()))).collect();
+        st.led = read(q(0x1f, 2)).filter(|d| d.len() >= 2).map(|d| [d[0], d[1]]);
+        st.buttons = BUTTONS.iter().map(|&(b, _)| (b, read(qa(0x0c, 2, b)).and_then(|d| d.get(1).copied()))).collect();
+        st.mouse_fw = read(q(0x01, 2)).as_deref().and_then(firmware);
         if m.wireless {
+            st.dongle_fw = read(q(0x0d, 2)).as_deref().and_then(firmware);
             st.dongle_button = read(q(0x1b, 1)).map(|d| d[0]);
             st.dongle_led = read(q(0x1e, 1)).map(|d| d[0] != 0);
         }
@@ -246,11 +315,20 @@ fn collect(m: &Mouse, full: bool) -> Status {
     st
 }
 
+/// Opcode 0x18: byte 0 = rotation on, byte 1 = signed degrees (Bibimbap's range is -30..30).
 fn rotation_text(r: [u8; 2]) -> String {
-    match (r[0], r[1]) {
-        (0, 0) => "0°".to_string(),
-        (1, n) => format!("+{n}°"),
+    match (r[0], r[1] as i8) {
+        (0, _) | (_, 0) => "0°".to_string(),
+        (1, n) => format!("{n:+}°"),
         _ => format!("raw {}", hex(&r)),
+    }
+}
+
+fn led_text(l: [u8; 2]) -> String {
+    match l[0] {
+        0 => format!("off (brightness {})", l[1]),
+        1 => format!("steady, brightness {}", l[1]),
+        e => format!("effect {e}, brightness {}", l[1]),
     }
 }
 
@@ -263,7 +341,7 @@ fn dongle_button_name(code: u8) -> &'static str {
     }
 }
 
-/// `show_raw` adds the raw bytes behind decoded values (just battery so far).
+/// `show_raw` adds the raw battery byte.
 fn print_text(st: &Status, verbose: bool, show_raw: bool) {
     let mode = if st.wireless { "wireless (eS LINK dongle)" } else { "wired" };
     if verbose {
@@ -280,6 +358,9 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
         let dpi = if s.x == s.y { s.x.to_string() } else { format!("{} × {}", s.x, s.y) };
         println!("dpi           : {dpi}  (stage {active} of {count})");
     }
+    if st.xy_linked == Some(false) {
+        println!("X-Y           : separate");
+    }
     if let Some(c) = st.polling_code {
         println!("polling rate  : {}", polling(c));
     }
@@ -293,11 +374,15 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
         println!("angle snap    : {}", on_off(v as u8));
     }
     if let Some(v) = st.lod {
-        let note = if v == 2 { "  (Bibimbap \"Default\")" } else { "" };
-        println!("LOD           : {v}{note}");
+        let t = match lod_mm(v) {
+            Some(mm) if v == 2 => format!("{mm} mm  (Default)"),
+            Some(mm) => format!("{mm} mm"),
+            None => format!("unknown code {v}"),
+        };
+        println!("LOD           : {t}");
     }
     if let Some(v) = st.debounce_raw {
-        let t = if v == 0 { "0 ms".to_string() } else { format!("raw {v} (ms scale unconfirmed)") };
+        let t = debounce_ms(v).map(|ms| format!("{ms} ms")).unwrap_or_else(|| format!("unknown code {v}"));
         println!("debounce      : {t}");
     }
     if let Some(r) = st.rotation {
@@ -311,6 +396,12 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
         },
         None => println!("battery       : no reply"),
     }
+    if st.charging == Some(true) {
+        println!("charging      : yes");
+    }
+    if st.linked == Some(false) {
+        println!("link          : dongle reports no mouse connected");
+    }
     if verbose {
         let list: Vec<String> = st
             .stages
@@ -321,13 +412,27 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
             })
             .collect();
         println!("dpi stages    : {}  (active bracketed)", list.join("  "));
-        let buttons: Vec<String> = st.buttons.iter().map(|(b, f)| format!("{b:02x}={}", f.map(|v| v.to_string()).unwrap_or("?".into()))).collect();
-        println!("button codes  : {}  (1–5 = factory defaults; mapping unconfirmed)", buttons.join(" "));
+        if let Some(l) = st.led {
+            println!("mouse LED     : {}", led_text(l));
+        }
+        let buttons: Vec<String> = st
+            .buttons
+            .iter()
+            .map(|&(b, f)| {
+                let name = BUTTONS.iter().find(|(c, _)| *c == b).map(|(_, n)| *n).unwrap_or("?");
+                format!("{name}={}", f.map(button_function).unwrap_or("?"))
+            })
+            .collect();
+        println!("buttons       : {}", buttons.join("  "));
         if let Some(b) = st.dongle_button {
             println!("dongle button : {}", dongle_button_name(b));
         }
         if let Some(v) = st.dongle_led {
             println!("dongle LED    : {}", on_off(v as u8));
+        }
+        if let Some(f) = &st.mouse_fw {
+            let dongle = st.dongle_fw.as_ref().map(|d| format!(", dongle {d}")).unwrap_or_default();
+            println!("firmware      : mouse {f}{dongle}  (build numbers; both show as V1.0 in Bibimbap)");
         }
     }
 }
@@ -350,14 +455,6 @@ fn print_json(st: &Status) {
             format!("{{\"n\":{},\"x\":{},\"y\":{},\"colour\":{c}}}", s.n, s.x, s.y)
         })
         .collect();
-    let (hz, hz_confirmed) = match st.polling_code {
-        Some(2) => (Some(1000), true),
-        Some(3) => (Some(2000), true),
-        Some(1) => (Some(500), false),
-        Some(4) => (Some(4000), false),
-        Some(5) => (Some(8000), true),
-        _ => (None, false),
-    };
     let fields = [
         format!("\"mode\":{}", json_str(if st.wireless { "wireless" } else { "wired" })),
         format!("\"profile\":{}", json_opt(st.profile)),
@@ -365,17 +462,32 @@ fn print_json(st: &Status) {
         format!("\"active_stage\":{}", json_opt(st.active_stage)),
         format!("\"stages\":[{}]", stages.join(",")),
         format!("\"polling_code\":{}", json_opt(st.polling_code)),
-        format!("\"polling_hz\":{}", json_opt(hz)),
-        format!("\"polling_hz_confirmed\":{hz_confirmed}"),
+        format!("\"polling_hz\":{}", json_opt(st.polling_code.and_then(polling_hz))),
         format!("\"motion_sync\":{}", json_opt(st.motion_sync)),
         format!("\"turbo\":{}", json_opt(st.turbo)),
         format!("\"angle_snap\":{}", json_opt(st.angle_snap)),
         format!("\"lod\":{}", json_opt(st.lod)),
+        format!("\"lod_mm\":{}", json_opt(st.lod.and_then(lod_mm))),
         format!("\"debounce_raw\":{}", json_opt(st.debounce_raw)),
+        format!("\"debounce_ms\":{}", json_opt(st.debounce_raw.and_then(debounce_ms))),
         format!("\"rotation\":{}", json_opt(st.rotation.map(|r| json_str(&rotation_text(r))))),
+        format!("\"xy_linked\":{}", json_opt(st.xy_linked)),
+        format!("\"led\":{}", json_opt(st.led.map(|l| json_str(&led_text(l))))),
+        format!(
+            "\"buttons\":{{{}}}",
+            st.buttons
+                .iter()
+                .filter_map(|&(b, f)| Some(format!("{}:{}", json_str(BUTTONS.iter().find(|(c, _)| *c == b)?.1), json_str(button_function(f?)))))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
         format!("\"dongle_button\":{}", json_opt(st.dongle_button.map(|b| json_str(dongle_button_name(b))))),
         format!("\"dongle_led\":{}", json_opt(st.dongle_led)),
         format!("\"battery\":{}", json_opt(st.battery_raw.and_then(battery_percent))),
+        format!("\"charging\":{}", json_opt(st.charging)),
+        format!("\"linked\":{}", json_opt(st.linked)),
+        format!("\"mouse_fw\":{}", json_opt(st.mouse_fw.as_deref().map(json_str))),
+        format!("\"dongle_fw\":{}", json_opt(st.dongle_fw.as_deref().map(json_str))),
     ];
     println!("{{{}}}", fields.join(","));
 }
@@ -394,7 +506,7 @@ fn main() {
             "-h" | "--help" => {
                 println!("espulse — read-only status of the Pulsar eS Xlite\n");
                 println!("  -v, --verbose   also show all DPI stages with colours, button codes and dongle settings");
-                println!("  --raw           also dump the replies we haven't decoded yet, as hex");
+                println!("  --raw           also dump every reply received, as hex");
                 println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
                 println!("  -b, --battery   battery % only, one read query (for scripts/widgets); exit 3 = unexpected reply");
                 return;
@@ -427,16 +539,10 @@ fn main() {
     print_text(&st, verbose, raw || verbose);
 
     if raw {
-        println!("\nundecoded replies (same reads Bibimbap makes):");
-        let mut unknown = vec![q(0x01, 2), q(0x06, 1), q(0x0d, 2), q(0x0f, 1), q(0x1d, 5), q(0x1f, 2)];
-        if m.wireless {
-            unknown.push(q(0x10, 1));
-        }
-        for u in unknown {
-            match m.read(u) {
-                Some(d) => println!("  0x{:02x}: {}", u.op, hex(&d)),
-                None => println!("  0x{:02x}: no reply", u.op),
-            }
+        println!("\nraw replies:");
+        for (query, d) in m.log.borrow().iter() {
+            let arg = query.arg.map(|a| format!(" [{a:02x}]")).unwrap_or_default();
+            println!("  0x{:02x}{arg}: {}", query.op, hex(d));
         }
     }
 }
@@ -476,6 +582,30 @@ mod tests {
         assert_eq!(parse_reply(0x14, &[0x00, 0x00, 0x00, 0x00, 0x88, 0x0f]), None); // wired
         assert_eq!(parse_reply(0x14, &[0x0e, 0xa5, 0xff]), None); // dongle
         assert_eq!(parse_reply(0x14, &[0x0e, 0xa5, 0x07, 0x01, 0x01, 0x02]), None); // other op
+    }
+
+    #[test]
+    fn busy_replies_are_rejected() {
+        // Bibimbap keeps polling when the reply echoes the op with direction 03.
+        assert_eq!(parse_reply(0x0b, &[0x0e, 0xa5, 0x0b, 0x03, 0x01, 0x12]), None);
+    }
+
+    #[test]
+    fn decoded_values_from_the_capture() {
+        // Writes captured 2026-10-31 alongside the values Bibimbap showed.
+        assert_eq!(rotation_text([0x01, 0xfb]), "-5°");
+        assert_eq!(rotation_text([0x01, 0xe2]), "-30°");
+        assert_eq!(rotation_text([0x01, 0x1e]), "+30°");
+        assert_eq!(rotation_text([0x00, 0x00]), "0°");
+        assert_eq!(lod_mm(2), Some("0.8"));
+        assert_eq!(lod_mm(11), Some("1.4"));
+        assert_eq!(debounce_ms(2), Some(4));
+        assert_eq!(polling_hz(1), Some(500));
+        assert_eq!(polling_hz(4), Some(4000));
+        assert_eq!(button_function(4), "Backward");
+        assert_eq!(firmware(&[0x56, 0x00]).as_deref(), Some("0056"));
+        assert_eq!(firmware(&[0x30, 0x00]).as_deref(), Some("0030"));
+        assert_eq!(led_text([0x01, 0x0a]), "steady, brightness 10");
     }
 
     #[test]

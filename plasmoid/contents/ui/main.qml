@@ -239,13 +239,6 @@ PlasmoidItem {
                     }
                 }
             }
-            PC3.Label {
-                visible: root.st && root.st.polling_hz && !root.st.polling_hz_confirmed
-                text: "(this rate's code is inferred, not yet confirmed)"
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
-                opacity: 0.6
-                Layout.alignment: Qt.AlignHCenter
-            }
         }
 
         ColumnLayout {
@@ -257,15 +250,15 @@ PlasmoidItem {
             InfoRow { label: "Motion sync"; value: root.st && root.st.motion_sync ? "On" : "Off" }
             InfoRow { label: "Turbo mode"; value: root.st && root.st.turbo ? "On" : "Off" }
             InfoRow { label: "Angle snap"; value: root.st && root.st.angle_snap ? "On" : "Off" }
-            InfoRow { label: "LOD"; value: root.st ? (root.st.lod === 2 ? "Default" : "level " + root.st.lod) : "" }
-            InfoRow { label: "Debounce"; value: root.st ? (root.st.debounce_raw === 0 ? "0 ms" : "raw " + root.st.debounce_raw) : "" }
+            InfoRow { label: "LOD"; value: root.st ? (root.st.lod_mm !== null ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
+            InfoRow { label: "Debounce"; value: root.st ? (root.st.debounce_ms !== null ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
             InfoRow { label: "Rotation"; value: root.st && root.st.rotation ? root.st.rotation : "" }
             InfoRow {
                 visible: root.st && root.st.mode === "wireless"
                 label: "Dongle button · LED"
                 value: root.st ? (root.st.dongle_button || "?") + " · " + (root.st.dongle_led ? "on" : "off") : ""
             }
-            InfoRow { label: "Battery"; value: root.battery >= 0 ? root.battery + "%" : "unknown" }
+            InfoRow { label: "Battery"; value: root.battery >= 0 ? root.battery + "%" + (root.st && root.st.charging ? " · charging" : "") : "unknown" }
         }
 
         Item { Layout.fillHeight: true }
