@@ -50,13 +50,15 @@ Names are Bibimbap's function names. Byte offsets are into `<data…>`.
 | `0x08` | 2 | `readSensorSetting` | byte 0 = "gaming" mode, shown as Turbo Mode; byte 1 = Motion Sync | confirmed |
 | `0x09` | 1 | `readLod` | 0.7 / 0.8 / 1.0 / 1.2 / 1.4 mm = 1 / 2 / 4 / 7 / 11. 0.8 mm is "Default" | confirmed |
 | `0x0a` | 2 | `readMousePid` | mouse USB PID, u16 LE. Bibimbap never calls it | source only |
-| `0x0b` | 1 | `readBatteryLevel` | battery = value × 5 %. `ff` = no reading yet. Runs high while charging | source + matched |
+| `0x0b` | 1 | `readBatteryLevel` | battery = value × 5 %. `ff` = no reading yet. Can jump after the cable goes in, see below | source + matched |
 | `0x0c` | 2 | `readMacroSetting` | per button `<button> <function>`, see below | confirmed |
 | `0x0d` | 2 | `readDongleFirmwareVersion` | dongle firmware build: `30 00` = 0030, same as its USB bcdDevice | source + matched |
+| `0x0e` | 2 | not used | Over the dongle `56 00`, the same value as the mouse firmware build; the cable doesn't answer. Probably the dongle reporting the mouse's build | one-off read |
 | `0x0f` | 1 | `readWirelessStatus` | `01` = mouse connected to the dongle, `00` = none (e.g. mouse on its cable). Dongle only | confirmed |
-| `0x10` | 1 | `readBatteryChargingStatus` | `01` = charging. Bibimbap asks the dongle, but the mouse answers it over its cable too | confirmed (cable) |
+| `0x10` | 1 | `readBatteryChargingStatus` | Bibimbap calls `01` charging. Seen `01` only on the cable and `00` only over the dongle, so it could mean charging or just cable connected. Bibimbap asks the dongle, but the mouse answers it over its cable too | source + seen on cable |
 | `0x14` | 1 | `readCurrentProfile` | active profile 1–4 | confirmed |
 | `0x15` | 4 | `readProfileOnStatus` | which of profiles 1–4 are enabled. Bibimbap never reads it | source only |
+| `0x16` | ? | not used | Over the cable `03 01 00`: the opcode is recognised, but direction `03` never cleared, so it looks refused. Unknown purpose | one-off read |
 | `0x18` | 2 | `readAngleTune` | rotation: byte 0 = on, byte 1 = signed degrees (−30…30). −5° = `01 fb`, +30° = `01 1e`, 0° = `00 00` | confirmed |
 | `0x19` | 1 | `readColorId` | colourway ID. Bibimbap never reads it | source only |
 | `0x1b` | 1 | `readDongleLeftButton` | dongle function button: 1 = Profile, 2 = Polling Rate, 3 = Turbo Mode | confirmed |
@@ -93,9 +95,21 @@ followed by a `0x14` write of the current profile, apparently to save it.
 The mouse shows up as `9604` (bcdDevice `0x0056`, the same build as `0x01`) and the dongle as
 `5602` (bcdDevice `0x0030`). The dongle answers its own reads (`0x0f` = `00`, `0x0d` = `30 00`)
 and `0e a5 ff` (not ready) to everything it would have to ask the mouse. The cable doesn't
-answer the dongle-only reads (`0x0d`, `0x0f`). Over the cable `0x10` = `01` (charging). The
-battery read rose 85 → 90 → 95 → 100 % within ~10 minutes of plugging in, so the level runs
-high while charging.
+answer the dongle-only reads (`0x0d`, `0x0f`). Over the cable `0x10` = `01`.
+
+## Battery level on the cable
+
+- 2026-10-31: `0x0b` rose 85 → 90 → 95 → 100 % within ~10 minutes of plugging in.
+- 2026-11-02: it read 90 % over the dongle and 100 % within moments of plugging in the cable. It
+  still read 100 % over the dongle, on battery, after the cable came out.
+
+A jump that fast suggests the level follows voltage rather than real charge, and that it reads
+high under charge. The second result doesn't confirm that: the level didn't fall after
+unplugging, at least not right away.
+
+`/cMouse` converts voltage to percent with a 21-point table, 3050–4110 mV, one point per 5 %.
+`0x0b` also has 21 steps (0–20), which would fit the eS firmware doing something similar, but
+that's an analogy from another protocol.
 
 ## One-off reads Bibimbap doesn't send (2026-11-02)
 
@@ -122,4 +136,6 @@ Bibimbap's device list routes these to the same page: VID `3710` PIDs `9501`, `9
 
 - **Mouse switched off:** presumably the same as on its cable (`0x0f` = `00`, `ff` to
   everything else). Not checked.
-- **`0x10` when full:** whether it drops to `00` once charging finishes.
+- **`0x10` when full:** whether it drops to `00` once charging finishes, which would show whether
+  it means charging or just cable connected.
+- **Battery after unplugging:** whether the level falls back after a jump.

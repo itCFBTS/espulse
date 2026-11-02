@@ -42,7 +42,7 @@ that builds a write. Decoded protocol, with where each meaning comes from:
 Only one program can talk to the mouse at a time, so close any Bibimbap tab first.
 
 With the mouse on its cable espulse reads it over the cable, where it also reports charging.
-The battery level reads high while charging.
+The battery level can jump soon after the cable goes in, so right after plugging in it may not reflect real charge.
 
 ## Install
 
