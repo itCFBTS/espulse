@@ -4,9 +4,15 @@ Captured with usbmon while Pulsar's web driver (Bibimbap, bbb.pulsar.gg, Chrome 
 the mouse: over its USB cable on 2026-10-26, over the eS LINK dongle (3710:5602) on 2026-10-26/27
 and 2026-10-31. Mouse and dongle firmware V1.0.
 
-On 2026-10-31 the meanings were checked against Bibimbap's own JavaScript
-(`bbb.pulsar.gg/vMouse/assets/index-*.js`), which names each opcode (`readBatteryLevel`,
-`readDpiXyBinding`, …) and has the lookup tables. Each entry says how it was established:
+On 2026-10-31 the meanings were checked against Bibimbap's own JavaScript, which names each opcode
+(`readBatteryLevel`, `readDpiXyBinding`, …) and has the lookup tables. It's Pulsar's code, so it
+isn't in this repo; these are the files read, as fetched on 2026-11-02:
+
+- `https://bbb.pulsar.gg/vMouse/assets/index-ByQEjV9Q.js` (the eS page), SHA-256
+  `5c0b9552c40572b175c4eab1a8c08151c535ea77404c1d3459cc342d30ef0bcb`
+- `https://bbb.pulsar.gg/cMouse/js/app.2262e49f.js` (other mice), SHA-256
+  `45ee1dca4bd3196dbf5cfad73b984c5e592d03ad15a501cfad76b751e2b5cec5`
+ Each entry says how it was established:
 **confirmed** (we changed the setting and saw the command), **source** (Bibimbap's code says so),
 **matched** (the value equals what Bibimbap displays).
 
