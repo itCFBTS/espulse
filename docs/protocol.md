@@ -12,6 +12,7 @@ isn't in this repo; these are the files read, as fetched on 2026-11-02:
   `5c0b9552c40572b175c4eab1a8c08151c535ea77404c1d3459cc342d30ef0bcb`
 - `https://bbb.pulsar.gg/cMouse/js/app.2262e49f.js` (other mice), SHA-256
   `45ee1dca4bd3196dbf5cfad73b984c5e592d03ad15a501cfad76b751e2b5cec5`
+
 Each entry says how it was established:
 **confirmed** (we changed the setting and saw the command), **source** (Bibimbap's code says so),
 **matched** (the value equals what Bibimbap displays).
