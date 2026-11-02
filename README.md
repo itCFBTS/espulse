@@ -25,7 +25,7 @@ battery       : 70%
 - `--battery-json` prints one line in the same shape as `pulsar-mouse --battery-json`
   from [pulsar-mouse-linux](https://github.com/packerlschupfer/pulsar-mouse-linux), so a widget
   can read both tools the same way: `{"wireless":true,"battery_percent":85,"power_connected":false,"battery_mv":null}`.
-  `battery_mv` is always null: Bibimbap has no voltage read, and we know of none.
+  `battery_mv` is always null: no voltage read has been found for this mouse.
 - `--json` prints everything `-v` reads as one JSON object (used by the tray widget).
 - `--raw` adds every reply received, as hex.
 

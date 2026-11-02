@@ -58,8 +58,9 @@ Names are Bibimbap's function names. Byte offsets are into `<data…>`.
 | `0x1e` | 1 | `readDongleLed` | dongle "Function & DPI LED": 1 = on | confirmed |
 | `0x1f` | 2 | `readMouseLedControl` | byte 0 = LED effect (0 off, 1 steady), byte 1 = brightness 1–10 | confirmed |
 
-Bibimbap has no battery voltage read; `0x0b` is all it asks for. Its code uses no opcode `0x0e`,
-`0x11`, `0x12`, `0x13` or `0x16`; those are unknown, and espulse doesn't send them.
+Bibimbap has no battery voltage read; `0x0b` is all it asks for, and no voltage has turned up
+(see "One-off reads"). `/cMouse`, Bibimbap's page for other mice, does read voltage, but over
+report `0x08`, which this mouse's HID descriptor doesn't have.
 
 **Write-only commands espulse must never send:** `0x17` = factory reset, `0x1a` = start dongle
 pairing.
@@ -88,6 +89,22 @@ and `0e a5 ff` (not ready) to everything it would have to ask the mouse. The cab
 answer the dongle-only reads (`0x0d`, `0x0f`). Over the cable `0x10` = `01` (charging). The
 battery read rose 85 → 90 → 95 → 100 % within ~10 minutes of plugging in, so the level runs
 high while charging.
+
+## One-off reads Bibimbap doesn't send (2026-11-02)
+
+Sent once each, as reads, with all settings compared before and after (no change). espulse
+doesn't send any of these.
+
+| Read | Over the cable | Over the dongle |
+|---|---|---|
+| `0x0b`, asking 4 bytes | battery byte, then zeros | battery byte, then zeros |
+| `0x0e`, asking 2 bytes | no answer | `56 00`: the same value as the mouse firmware build (`0x01`) |
+| `0x11`, `0x12`, `0x13`, asking 2 bytes | no answer | no answer; the previous reply stays in the buffer |
+| `0x16`, asking 2 bytes | `0e a5 16 03 01 00`: direction `03`, length 1, unchanged for 0.5 s | not ready (`0e a5 ff`) for 0.5 s |
+
+The dongle leaves its last reply in place when it ignores a read, so a reply must echo the opcode
+to count. The HID descriptor also lists a second vendor feature report, `0x03`, which hasn't been
+tried.
 
 ## Other devices
 

@@ -457,7 +457,7 @@ fn json_str(s: &str) -> String {
 
 /// One line for --battery-json, the same shape as `pulsar-mouse --battery-json`, so a widget can
 /// read both tools alike. `wireless` means a mouse with a battery, even while it's on its cable.
-/// Bibimbap has no voltage read and we know of none, so `battery_mv` is always null.
+/// No voltage read has been found for this mouse, so `battery_mv` is always null.
 fn battery_json(percent: u8, power_connected: Option<bool>) -> String {
     format!("{{\"wireless\":true,\"battery_percent\":{percent},\"power_connected\":{},\"battery_mv\":null}}", json_opt(power_connected))
 }
