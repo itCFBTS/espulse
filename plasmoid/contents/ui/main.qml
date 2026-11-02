@@ -1,6 +1,7 @@
 // espulse — tray widget. In the background it only asks `espulse --battery-json` (two or three read queries).
 // The full read (`espulse --json`, the same queries Bibimbap makes on connect) runs only when
-// the popup opens, and its battery value refreshes the icon too.
+// the popup opens, and its battery value refreshes the icon too. Every 10 s it lists USB IDs from
+// sysfs, which sends the mouse nothing, and reads the battery again if they changed.
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
@@ -17,11 +18,18 @@ PlasmoidItem {
     property string lastUpdate: ""
     property int battery: -1      // -1 = unknown
     property bool powerConnected: false
+    property bool outdated: false  // espulse doesn't know --battery-json
+    property string runningCmd: "" // one espulse at a time: they'd share the mouse's reply buffer
+    property string queuedCmd: ""
+    property var usbIds: null      // eS product IDs last seen; null until the first check
+    property int retries: 0        // battery reads left to try after a USB change
 
     // Runs through /bin/sh; Plasma's PATH often lacks the per-user bin dirs.
     readonly property string bin: 'PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" espulse'
     readonly property string cmdFull: bin + " --json"
     readonly property string cmdBattery: bin + " --battery-json"
+    readonly property string cmdUsb: 'for d in /sys/bus/usb/devices/*; do [ "$(cat "$d/idVendor" 2>/dev/null)" = 3710 ] && cat "$d/idProduct"; done | sort'
+    readonly property color batteryColour: powerConnected ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.textColor
     // Top-down eS Xlite outline, Breeze symbolic style (recoloured to the theme's text colour).
     readonly property url mouseIcon: Qt.resolvedUrl("../icons/es-xlite.svg")
 
@@ -44,6 +52,17 @@ PlasmoidItem {
         connectedSources: []
         onNewData: function (source, data) {
             disconnectSource(source)
+            if (source === root.cmdUsb) {
+                const ids = (data["stdout"] || "").trim()
+                if (root.usbIds !== null && ids !== root.usbIds) {
+                    root.retries = 3
+                    settle.restart()
+                }
+                root.usbIds = ids
+                return
+            }
+            root.runningCmd = ""
+            Qt.callLater(root.runQueued)
             const code = data["exit code"]
             if (source === root.cmdBattery) {
                 let reading = null
@@ -52,10 +71,19 @@ PlasmoidItem {
                 } catch (e) {
                     reading = null
                 }
-                root.battery = reading ? reading.battery_percent : -1
+                root.outdated = code === 2
+                root.battery = reading && typeof reading.battery_percent === "number" ? reading.battery_percent : -1
                 root.powerConnected = reading ? reading.power_connected === true : false
+                // The mouse takes a moment to reconnect after the cable comes out.
+                if (root.battery >= 0) {
+                    root.retries = 0
+                } else if (root.retries > 0) {
+                    root.retries--
+                    settle.restart()
+                }
                 return
             }
+            if (code !== 0) root.clearReading()
             if (code === 127) {
                 root.err = "espulse not installed"
                 return
@@ -70,26 +98,48 @@ PlasmoidItem {
             }
             try {
                 root.st = JSON.parse(data["stdout"])
-                if (root.st.battery_percent !== null) root.battery = root.st.battery_percent
+                if (typeof root.st.battery_percent === "number") root.battery = root.st.battery_percent
                 root.powerConnected = root.st.power_connected === true
                 root.err = ""
                 root.lastUpdate = new Date().toLocaleTimeString(Qt.locale(), "hh:mm")
             } catch (e) {
+                root.clearReading()
                 root.err = "unexpected output from espulse"
             }
         }
     }
 
-    function refresh() { exec.connectSource(cmdFull) }
-    function refreshBattery() { exec.connectSource(cmdBattery) }
+    function clearReading() {
+        st = null
+        battery = -1
+        powerConnected = false
+    }
+    function run(cmd) {
+        if (runningCmd !== "") {
+            if (cmd === cmdFull || queuedCmd === "") queuedCmd = cmd
+            return
+        }
+        runningCmd = cmd
+        exec.connectSource(cmd)
+    }
+    function runQueued() {
+        if (queuedCmd === "" || runningCmd !== "") return
+        const cmd = queuedCmd
+        queuedCmd = ""
+        run(cmd)
+    }
+    function refresh() { run(cmdFull) }
+    function refreshBattery() { run(cmdBattery) }
 
     Timer { interval: 5 * 60 * 1000; running: true; repeat: true; onTriggered: root.refreshBattery() }
+    Timer { interval: 10 * 1000; running: true; repeat: true; triggeredOnStart: true; onTriggered: exec.connectSource(root.cmdUsb) }
+    Timer { id: settle; interval: 3000; onTriggered: root.refreshBattery() }
     Component.onCompleted: refreshBattery()
     onExpandedChanged: { if (root.expanded) refresh() }
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
-    toolTipMainText: "Pulsar eS Xlite" + (battery >= 0 ? " · " + battery + "%" + (powerConnected ? " · charging" : "") : "")
-    toolTipSubText: battery >= 0 ? "click for settings" : "battery unknown · click for settings"
+    toolTipMainText: "Pulsar eS Xlite" + (battery >= 0 ? " · " + battery + "%" + (powerConnected ? " · plugged in" : "") : "")
+    toolTipSubText: outdated ? "espulse is out of date: update it" : battery >= 0 ? "click for settings" : "battery unknown · click for settings"
 
     compactRepresentation: MouseArea {
         id: compactRoot
@@ -114,7 +164,7 @@ PlasmoidItem {
                 anchors.centerIn: parent
                 visible: root.battery >= 0
                 text: root.battery
-                color: root.powerConnected ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.textColor
+                color: root.batteryColour
                 font.bold: true
                 fontSizeMode: Text.Fit
                 minimumPointSize: 6
@@ -140,7 +190,7 @@ PlasmoidItem {
             PC3.Label {
                 visible: root.battery >= 0
                 text: root.battery + "%"
-                color: root.powerConnected ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.textColor
+                color: root.batteryColour
             }
         }
     }
@@ -271,11 +321,11 @@ PlasmoidItem {
                 label: "Dongle button · LED"
                 value: root.st ? (root.st.dongle_button || "?") + " · " + (root.st.dongle_led ? "on" : "off") : ""
             }
-            // Battery and charging from the same full read, so the charging note can't outlive it.
+            // Battery and power from the same full read, so the plugged-in note can't outlive it.
             InfoRow {
                 label: "Battery"
                 value: root.st && typeof root.st.battery_percent === "number"
-                    ? root.st.battery_percent + "%" + (root.st.power_connected ? " · charging" : "")
+                    ? root.st.battery_percent + "%" + (root.st.power_connected ? " · plugged in" : "")
                     : (root.battery >= 0 ? root.battery + "%" : "unknown")
             }
         }

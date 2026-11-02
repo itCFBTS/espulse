@@ -1,7 +1,8 @@
 //! espulse — read-only status of the Pulsar eS Xlite (wired 3710:9604, eS LINK dongle 3710:5602).
 //!
 //! Every packet it sends is one of the read queries Pulsar's web driver (Bibimbap) sends when it
-//! connects, copied byte for byte from USB captures. The direction byte is always 0x01 (read);
+//! connects, copied byte for byte from USB captures. One difference: Bibimbap asks only the dongle
+//! for 0x10, and espulse also asks the mouse on its cable. The direction byte is always 0x01 (read);
 //! there is no code path that builds a write. Field meanings follow Bibimbap's own source
 //! (opcode names, lookup tables) and were checked against captures. Protocol notes: docs/protocol.md.
 //! Needs the hidraw uaccess udev rule from udev/71-pulsar-es.rules (no sudo).
@@ -62,6 +63,12 @@ fn parse_reply(op: u8, r: &[u8]) -> Option<Vec<u8>> {
     Some(r[5..5 + n].to_vec())
 }
 
+/// The reply's data if it answers `query`: long enough, and echoing the selector if the query has
+/// one. A reply can be left over from an earlier read, so the opcode alone doesn't prove it's ours.
+fn answer(query: Query, r: &[u8]) -> Option<Vec<u8>> {
+    parse_reply(query.op, r).filter(|d| d.len() >= query.len as usize && query.arg.is_none_or(|a| d.first() == Some(&a)))
+}
+
 /// _IOC(_IOC_READ | _IOC_WRITE, 'H', nr, len) — HIDIOCSFEATURE is nr 6, HIDIOCGFEATURE nr 7.
 fn hid_ioc(nr: libc::c_ulong, len: usize) -> libc::c_ulong {
     (3 << 30) | ((len as libc::c_ulong) << 16) | ((b'H' as libc::c_ulong) << 8) | nr
@@ -97,8 +104,7 @@ impl Mouse {
                 if n < 0 {
                     return None;
                 }
-                // A reply shorter than asked for isn't an answer; callers index into it.
-                if let Some(d) = parse_reply(query.op, &buf[..n as usize]).filter(|d| d.len() >= query.len as usize) {
+                if let Some(d) = answer(query, &buf[..n as usize]) {
                     if let Some(log) = &self.log {
                         log.borrow_mut().push((query, d.clone()));
                     }
@@ -284,7 +290,7 @@ struct Status {
     buttons: Vec<(&'static str, Option<u8>)>,
     dongle_button: Option<u8>,
     dongle_led: Option<bool>,
-    charging: Option<bool>,
+    power_connected: Option<bool>,
     battery_raw: Option<u8>,
     mouse_fw: Option<String>,
     dongle_fw: Option<String>,
@@ -315,9 +321,9 @@ fn collect(m: &Mouse, full: bool) -> Status {
     st.rotation = read(q(0x18, 2)).map(|d| [d[0], d[1]]);
     st.xy_linked = read(q(0x06, 1)).map(|d| d[0] == 1);
     st.battery_raw = read(q(0x0b, 1)).map(|d| d[0]);
-    // Bibimbap reads charging only over the dongle, but the dongle can't answer it while the mouse is
-    // on its cable, which is when it charges; over the cable the mouse answers it itself.
-    st.charging = read(q(0x10, 1)).map(|d| d[0] == 1);
+    // Bibimbap reads this only over the dongle, but the dongle can't answer it while the mouse is on
+    // its cable, the only time it has been seen set; over the cable the mouse answers it itself.
+    st.power_connected = read(q(0x10, 1)).map(|d| d[0] == 1);
     if full {
         st.led = read(q(0x1f, 2)).map(|d| [d[0], d[1]]);
         st.buttons = BUTTONS.iter().map(|&(b, name)| (name, read(qa(0x0c, 2, b)).map(|d| d[1]))).collect();
@@ -412,8 +418,8 @@ fn print_text(st: &Status, verbose: bool, show_raw: bool) {
         },
         None => println!("battery       : no reply"),
     }
-    if st.charging == Some(true) {
-        println!("charging      : yes");
+    if st.power_connected == Some(true) {
+        println!("plugged in    : yes");
     }
     if verbose {
         let list: Vec<String> = st
@@ -458,8 +464,15 @@ fn json_str(s: &str) -> String {
 /// One line for --battery-json, the same shape as `pulsar-mouse --battery-json`, so a widget can
 /// read both tools alike. `wireless` means a mouse with a battery, even while it's on its cable.
 /// No voltage read has been found for this mouse, so `battery_mv` is always null.
-fn battery_json(percent: u8, power_connected: Option<bool>) -> String {
-    format!("{{\"wireless\":true,\"battery_percent\":{percent},\"power_connected\":{},\"battery_mv\":null}}", json_opt(power_connected))
+fn battery_json(percent: u8, power_connected: bool) -> String {
+    format!("{{\"wireless\":true,\"battery_percent\":{percent},\"power_connected\":{power_connected},\"battery_mv\":null}}")
+}
+
+/// --battery, --battery-json and --json each print one fixed format, so they can't be combined with
+/// each other, -v or --raw.
+fn flags_conflict(battery: bool, battery_json: bool, json: bool, verbose: bool, raw: bool) -> bool {
+    let formats = [battery, battery_json, json].iter().filter(|f| **f).count();
+    formats > 1 || (formats == 1 && (verbose || raw))
 }
 
 /// Machine-readable output for the tray widget. Values that are only inferred are flagged.
@@ -501,7 +514,7 @@ fn print_json(st: &Status) {
         format!("\"dongle_button\":{}", json_opt(st.dongle_button.map(|b| json_str(dongle_button_name(b))))),
         format!("\"dongle_led\":{}", json_opt(st.dongle_led)),
         format!("\"battery_percent\":{}", json_opt(st.battery_raw.and_then(battery_percent))),
-        format!("\"power_connected\":{}", json_opt(st.charging)),
+        format!("\"power_connected\":{}", json_opt(st.power_connected)),
         format!("\"mouse_fw\":{}", json_opt(st.mouse_fw.as_deref().map(json_str))),
         format!("\"dongle_fw\":{}", json_opt(st.dongle_fw.as_deref().map(json_str))),
     ];
@@ -527,7 +540,7 @@ fn main() {
                 println!("  --raw           also dump every reply received, as hex (reads what -v reads)");
                 println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
                 println!("  -b, --battery   battery % only, one or two read queries (for scripts/widgets); exit 3 = unexpected reply");
-                println!("  --battery-json  battery_percent, power_connected and battery_mv as one JSON line; same exit codes");
+                println!("  --battery-json  battery_percent, power_connected and battery_mv as one JSON line; same exit codes, exit 1 = no reply");
                 return;
             }
             other => {
@@ -535,6 +548,10 @@ fn main() {
                 exit(2);
             }
         }
+    }
+    if flags_conflict(battery_only, battery_json_only, json, verbose, raw) {
+        eprintln!("--battery, --battery-json and --json can't be combined with each other, -v or --raw.");
+        exit(2);
     }
     if battery_only || battery_json_only {
         // The battery read doubles as the probe (over the dongle, after the link check).
@@ -544,7 +561,11 @@ fn main() {
             exit(3);
         };
         if battery_json_only {
-            println!("{}", battery_json(pct, m.read(q(0x10, 1)).map(|d| d[0] == 1)));
+            let Some(power) = m.read(q(0x10, 1)) else {
+                eprintln!("No reply to the power read (0x10).");
+                exit(1);
+            };
+            println!("{}", battery_json(pct, power[0] == 1));
         } else {
             println!("{pct}");
         }
@@ -632,9 +653,25 @@ mod tests {
 
     #[test]
     fn battery_json_matches_pulsar_mouse() {
-        assert_eq!(battery_json(85, Some(false)), r#"{"wireless":true,"battery_percent":85,"power_connected":false,"battery_mv":null}"#);
-        assert_eq!(battery_json(100, Some(true)), r#"{"wireless":true,"battery_percent":100,"power_connected":true,"battery_mv":null}"#);
-        assert_eq!(battery_json(70, None), r#"{"wireless":true,"battery_percent":70,"power_connected":null,"battery_mv":null}"#);
+        assert_eq!(battery_json(85, false), r#"{"wireless":true,"battery_percent":85,"power_connected":false,"battery_mv":null}"#);
+        assert_eq!(battery_json(100, true), r#"{"wireless":true,"battery_percent":100,"power_connected":true,"battery_mv":null}"#);
+    }
+
+    #[test]
+    fn replies_must_echo_the_selector() {
+        let stage1 = [0x0e, 0xa5, 0x04, 0x01, 0x06, 0x01, 0x00, 0x90, 0x01, 0x90, 0x01];
+        assert!(answer(qa(0x04, 6, 1), &stage1).is_some());
+        assert_eq!(answer(qa(0x04, 6, 2), &stage1), None); // left over from stage 1
+        assert_eq!(answer(q(0x0b, 1), &[0x0e, 0xa5, 0x0b, 0x01, 0x00]), None); // too short
+    }
+
+    #[test]
+    fn output_formats_cant_be_combined() {
+        assert!(!flags_conflict(false, false, false, true, true)); // -v --raw
+        assert!(!flags_conflict(false, true, false, false, false)); // --battery-json
+        assert!(flags_conflict(true, true, false, false, false)); // --battery --battery-json
+        assert!(flags_conflict(false, true, false, false, true)); // --battery-json --raw
+        assert!(flags_conflict(false, false, true, true, false)); // --json -v
     }
 
     #[test]

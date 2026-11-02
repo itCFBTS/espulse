@@ -29,19 +29,23 @@ battery       : 70%
 - `--json` prints everything `-v` reads as one JSON object (used by the tray widget).
 - `--raw` adds every reply received, as hex.
 
+`--battery`, `--battery-json` and `--json` each print one fixed format, so they can't be combined
+with each other, `-v` or `--raw`.
+
 > Not affiliated with or endorsed by Pulsar. Protocol reverse-engineered from USB captures of
 > Pulsar's web driver (Bibimbap); tested on mouse and dongle firmware V1.0.
 
 ## Read-only by design
 
 espulse sends only the read queries Bibimbap itself sends when it connects, copied byte for
-byte from USB captures. Every packet carries the protocol's read flag; there is no code path
+byte from USB captures. One difference: Bibimbap asks only the dongle whether power is connected,
+and espulse also asks the mouse on its cable. Every packet carries the protocol's read flag; there is no code path
 that builds a write. Decoded protocol, with where each meaning comes from:
 [docs/protocol.md](docs/protocol.md).
 
 Only one program can talk to the mouse at a time, so close any Bibimbap tab first.
 
-With the mouse on its cable espulse reads it over the cable, where it also reports charging.
+With the mouse on its cable espulse reads it over the cable, where it also reports that it's plugged in.
 The battery level can jump soon after the cable goes in, so right after plugging in it may not reflect real charge.
 
 ## Install
@@ -75,7 +79,8 @@ icon itself comes from inside the widget).
 
 Then enable **espulse** under the system tray's *Configure System Tray → Entries*, or add it
 from *Add Widgets*. In the background it only asks for the battery level every 5 minutes
-(two or three read queries), shown over a mouse icon, in green while the cable is connected. Opening the popup runs
+(two or three read queries), shown over a mouse icon, in green while the cable is connected. Every 10 seconds it also lists USB IDs, which
+sends the mouse nothing, and reads the battery again if they changed. Opening the popup runs
 the full read: all DPI stages, polling rate, the toggles, LOD, debounce, rotation and the
 dongle's settings. To update after pulling
 changes: `kpackagetool6 -t Plasma/Applet -u plasmoid`, then
