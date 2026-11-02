@@ -29,7 +29,9 @@ PlasmoidItem {
     readonly property string cmdFull: bin + " --json"
     readonly property string cmdBattery: bin + " --battery-json"
     readonly property string cmdUsb: 'for d in /sys/bus/usb/devices/*; do [ "$(cat "$d/idVendor" 2>/dev/null)" = 3710 ] && cat "$d/idProduct"; done | sort'
-    readonly property color batteryColour: powerConnected ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.textColor
+    // The panel's own colours, from the Plasma style: it can be dark while apps are light, or the reverse.
+    readonly property bool darkPanel: Kirigami.ColorUtils.brightnessForColor(Kirigami.Theme.backgroundColor) === Kirigami.ColorUtils.Dark
+    readonly property color batteryColour: !powerConnected ? Kirigami.Theme.textColor : darkPanel ? "#69f19e" : "#1a7f45"
     // Top-down eS Xlite outline, Breeze symbolic style (recoloured to the theme's text colour).
     readonly property url mouseIcon: Qt.resolvedUrl("../icons/es-xlite.svg")
 
