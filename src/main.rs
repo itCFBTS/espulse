@@ -455,6 +455,13 @@ fn json_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// One line for --battery-json, the same shape as `pulsar-mouse --battery-json`, so a widget can
+/// read both tools alike. `wireless` means a mouse with a battery, even while it's on its cable.
+/// Bibimbap has no voltage read and we know of none, so `battery_mv` is always null.
+fn battery_json(percent: u8, power_connected: Option<bool>) -> String {
+    format!("{{\"wireless\":true,\"battery_percent\":{percent},\"power_connected\":{},\"battery_mv\":null}}", json_opt(power_connected))
+}
+
 /// Machine-readable output for the tray widget. Values that are only inferred are flagged.
 fn print_json(st: &Status) {
     let stages: Vec<String> = st
@@ -493,8 +500,8 @@ fn print_json(st: &Status) {
         ),
         format!("\"dongle_button\":{}", json_opt(st.dongle_button.map(|b| json_str(dongle_button_name(b))))),
         format!("\"dongle_led\":{}", json_opt(st.dongle_led)),
-        format!("\"battery\":{}", json_opt(st.battery_raw.and_then(battery_percent))),
-        format!("\"charging\":{}", json_opt(st.charging)),
+        format!("\"battery_percent\":{}", json_opt(st.battery_raw.and_then(battery_percent))),
+        format!("\"power_connected\":{}", json_opt(st.charging)),
         format!("\"mouse_fw\":{}", json_opt(st.mouse_fw.as_deref().map(json_str))),
         format!("\"dongle_fw\":{}", json_opt(st.dongle_fw.as_deref().map(json_str))),
     ];
@@ -506,18 +513,21 @@ fn main() {
     let mut raw = false;
     let mut json = false;
     let mut battery_only = false;
+    let mut battery_json_only = false;
     for a in std::env::args().skip(1) {
         match a.as_str() {
             "-v" | "--verbose" => verbose = true,
             "--raw" => raw = true,
             "--json" => json = true,
             "-b" | "--battery" => battery_only = true,
+            "--battery-json" => battery_json_only = true,
             "-h" | "--help" => {
                 println!("espulse — read-only status of the Pulsar eS Xlite\n");
                 println!("  -v, --verbose   also show DPI stage colours, mouse LED, button functions, dongle settings and firmware");
                 println!("  --raw           also dump every reply received, as hex (reads what -v reads)");
                 println!("  --json          everything -v reads, as one JSON object (for the tray widget)");
                 println!("  -b, --battery   battery % only, one or two read queries (for scripts/widgets); exit 3 = unexpected reply");
+                println!("  --battery-json  battery_percent, power_connected and battery_mv as one JSON line; same exit codes");
                 return;
             }
             other => {
@@ -526,15 +536,17 @@ fn main() {
             }
         }
     }
-    if battery_only {
+    if battery_only || battery_json_only {
         // The battery read doubles as the probe (over the dongle, after the link check).
-        let (_, d) = open_mouse(q(0x0b, 1), false);
-        match battery_percent(d[0]) {
-            Some(pct) => println!("{pct}"),
-            None => {
-                eprintln!("unexpected battery reply 0x{:02x}", d[0]);
-                exit(3);
-            }
+        let (m, d) = open_mouse(q(0x0b, 1), false);
+        let Some(pct) = battery_percent(d[0]) else {
+            eprintln!("unexpected battery reply 0x{:02x}", d[0]);
+            exit(3);
+        };
+        if battery_json_only {
+            println!("{}", battery_json(pct, m.read(q(0x10, 1)).map(|d| d[0] == 1)));
+        } else {
+            println!("{pct}");
         }
         return;
     }
@@ -616,6 +628,13 @@ mod tests {
         assert_eq!(firmware(&[0x56, 0x00]).as_deref(), Some("0056"));
         assert_eq!(firmware(&[0x30, 0x00]).as_deref(), Some("0030"));
         assert_eq!(led_text([0x01, 0x0a]), "steady, brightness 10");
+    }
+
+    #[test]
+    fn battery_json_matches_pulsar_mouse() {
+        assert_eq!(battery_json(85, Some(false)), r#"{"wireless":true,"battery_percent":85,"power_connected":false,"battery_mv":null}"#);
+        assert_eq!(battery_json(100, Some(true)), r#"{"wireless":true,"battery_percent":100,"power_connected":true,"battery_mv":null}"#);
+        assert_eq!(battery_json(70, None), r#"{"wireless":true,"battery_percent":70,"power_connected":null,"battery_mv":null}"#);
     }
 
     #[test]

@@ -22,6 +22,10 @@ battery       : 70%
   function button and LED setting, and firmware build numbers.
 - `--battery` prints just the battery percentage, for scripts and the tray widget. It sends
   one read query (two over the dongle, which is first asked whether it has a mouse). The mouse reports battery in 5% steps.
+- `--battery-json` prints one line in the same shape as `pulsar-mouse --battery-json`
+  from [pulsar-mouse-linux](https://github.com/packerlschupfer/pulsar-mouse-linux), so a widget
+  can read both tools the same way: `{"wireless":true,"battery_percent":85,"power_connected":false,"battery_mv":null}`.
+  `battery_mv` is always null: Bibimbap has no voltage read, and we know of none.
 - `--json` prints everything `-v` reads as one JSON object (used by the tray widget).
 - `--raw` adds every reply received, as hex.
 
@@ -71,7 +75,7 @@ icon itself comes from inside the widget).
 
 Then enable **espulse** under the system tray's *Configure System Tray → Entries*, or add it
 from *Add Widgets*. In the background it only asks for the battery level every 5 minutes
-(one or two read queries), shown over a mouse icon. Opening the popup runs
+(two or three read queries), shown over a mouse icon, in green while the cable is connected. Opening the popup runs
 the full read: all DPI stages, polling rate, the toggles, LOD, debounce, rotation and the
 dongle's settings. To update after pulling
 changes: `kpackagetool6 -t Plasma/Applet -u plasmoid`, then

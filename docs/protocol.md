@@ -58,6 +58,9 @@ Names are Bibimbap's function names. Byte offsets are into `<data…>`.
 | `0x1e` | 1 | `readDongleLed` | dongle "Function & DPI LED": 1 = on | confirmed |
 | `0x1f` | 2 | `readMouseLedControl` | byte 0 = LED effect (0 off, 1 steady), byte 1 = brightness 1–10 | confirmed |
 
+Bibimbap has no battery voltage read; `0x0b` is all it asks for. Its code uses no opcode `0x0e`,
+`0x11`, `0x12`, `0x13` or `0x16`; those are unknown, and espulse doesn't send them.
+
 **Write-only commands espulse must never send:** `0x17` = factory reset, `0x1a` = start dongle
 pairing.
 

@@ -1,4 +1,4 @@
-// espulse — tray widget. In the background it only asks `espulse --battery` (one or two read queries).
+// espulse — tray widget. In the background it only asks `espulse --battery-json` (two or three read queries).
 // The full read (`espulse --json`, the same queries Bibimbap makes on connect) runs only when
 // the popup opens, and its battery value refreshes the icon too.
 import QtQuick
@@ -16,11 +16,12 @@ PlasmoidItem {
     property string err: "querying…"
     property string lastUpdate: ""
     property int battery: -1      // -1 = unknown
+    property bool powerConnected: false
 
     // Runs through /bin/sh; Plasma's PATH often lacks the per-user bin dirs.
     readonly property string bin: 'PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" espulse'
     readonly property string cmdFull: bin + " --json"
-    readonly property string cmdBattery: bin + " --battery"
+    readonly property string cmdBattery: bin + " --battery-json"
     // Top-down eS Xlite outline, Breeze symbolic style (recoloured to the theme's text colour).
     readonly property url mouseIcon: Qt.resolvedUrl("../icons/es-xlite.svg")
 
@@ -45,8 +46,14 @@ PlasmoidItem {
             disconnectSource(source)
             const code = data["exit code"]
             if (source === root.cmdBattery) {
-                const v = parseInt((data["stdout"] || "").trim())
-                root.battery = code === 0 && !isNaN(v) ? v : -1
+                let reading = null
+                try {
+                    reading = code === 0 ? JSON.parse(data["stdout"]) : null
+                } catch (e) {
+                    reading = null
+                }
+                root.battery = reading ? reading.battery_percent : -1
+                root.powerConnected = reading ? reading.power_connected === true : false
                 return
             }
             if (code === 127) {
@@ -63,7 +70,8 @@ PlasmoidItem {
             }
             try {
                 root.st = JSON.parse(data["stdout"])
-                if (root.st.battery !== null) root.battery = root.st.battery
+                if (root.st.battery_percent !== null) root.battery = root.st.battery_percent
+                root.powerConnected = root.st.power_connected === true
                 root.err = ""
                 root.lastUpdate = new Date().toLocaleTimeString(Qt.locale(), "hh:mm")
             } catch (e) {
@@ -80,7 +88,7 @@ PlasmoidItem {
     onExpandedChanged: { if (root.expanded) refresh() }
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
-    toolTipMainText: "Pulsar eS Xlite" + (battery >= 0 ? " · " + battery + "%" : "")
+    toolTipMainText: "Pulsar eS Xlite" + (battery >= 0 ? " · " + battery + "%" + (powerConnected ? " · charging" : "") : "")
     toolTipSubText: battery >= 0 ? "click for settings" : "battery unknown · click for settings"
 
     compactRepresentation: MouseArea {
@@ -106,6 +114,7 @@ PlasmoidItem {
                 anchors.centerIn: parent
                 visible: root.battery >= 0
                 text: root.battery
+                color: root.powerConnected ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.textColor
                 font.bold: true
                 fontSizeMode: Text.Fit
                 minimumPointSize: 6
@@ -128,7 +137,11 @@ PlasmoidItem {
                 Layout.preferredWidth: Kirigami.Units.iconSizes.small
                 Layout.preferredHeight: Kirigami.Units.iconSizes.small
             }
-            PC3.Label { visible: root.battery >= 0; text: root.battery + "%" }
+            PC3.Label {
+                visible: root.battery >= 0
+                text: root.battery + "%"
+                color: root.powerConnected ? Kirigami.Theme.positiveTextColor : Kirigami.Theme.textColor
+            }
         }
     }
 
@@ -261,8 +274,8 @@ PlasmoidItem {
             // Battery and charging from the same full read, so the charging note can't outlive it.
             InfoRow {
                 label: "Battery"
-                value: root.st && typeof root.st.battery === "number"
-                    ? root.st.battery + "%" + (root.st.charging ? " · charging" : "")
+                value: root.st && typeof root.st.battery_percent === "number"
+                    ? root.st.battery_percent + "%" + (root.st.power_connected ? " · charging" : "")
                     : (root.battery >= 0 ? root.battery + "%" : "unknown")
             }
         }
