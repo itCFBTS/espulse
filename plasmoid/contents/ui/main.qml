@@ -200,7 +200,7 @@ PlasmoidItem {
     fullRepresentation: ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
         Layout.minimumWidth: Kirigami.Units.gridUnit * 22
-        Layout.minimumHeight: Kirigami.Units.gridUnit * 20
+        Layout.minimumHeight: Kirigami.Units.gridUnit * 18
 
         component Pill: Rectangle {
             id: pill
@@ -237,7 +237,7 @@ PlasmoidItem {
         component ModeTile: Rectangle {
             property string text
             property bool on: false
-            Layout.fillWidth: true
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 6
             implicitHeight: modeLabel.implicitHeight + Kirigami.Units.largeSpacing
             radius: Kirigami.Units.cornerRadius
             color: on ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.3) : "transparent"
@@ -254,7 +254,7 @@ PlasmoidItem {
         component ValueTile: Rectangle {
             property string label
             property string value
-            Layout.fillWidth: true
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 6
             implicitHeight: valueColumn.implicitHeight + Kirigami.Units.largeSpacing
             radius: Kirigami.Units.cornerRadius
             color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.07)
@@ -298,7 +298,7 @@ PlasmoidItem {
             Item { Layout.fillWidth: true }
             Kirigami.Icon {
                 visible: root.battery >= 0
-                source: "battery-" + String(Math.round(root.battery / 10) * 10).padStart(3, "0")
+                source: "battery-" + String(Math.round(root.battery / 10) * 10).padStart(3, "0") + (root.powerConnected ? "-charging" : "")
                 isMask: true
                 color: root.batteryColour
                 Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
@@ -358,6 +358,10 @@ PlasmoidItem {
             }
         }
 
+        // The tray can make the popup taller than this content, so spare height is shared out between
+        // the sections instead of collecting above the footer.
+        Item { Layout.fillHeight: true }
+
         ColumnLayout {
             visible: root.st !== null
             spacing: Kirigami.Units.smallSpacing
@@ -365,22 +369,22 @@ PlasmoidItem {
             Layout.leftMargin: Kirigami.Units.largeSpacing * 2
             Layout.rightMargin: Kirigami.Units.largeSpacing * 2
             RowLayout {
-                uniformCellSizes: true
                 spacing: Kirigami.Units.smallSpacing
-                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignHCenter
                 ModeTile { text: "Motion Sync"; on: root.st ? root.st.motion_sync === true : false }
                 ModeTile { text: "Angle Snap"; on: root.st ? root.st.angle_snap === true : false }
                 ModeTile { text: "Turbo Mode"; on: root.st ? root.st.turbo === true : false }
             }
             RowLayout {
-                uniformCellSizes: true
                 spacing: Kirigami.Units.smallSpacing
-                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignHCenter
                 ValueTile { label: "LOD"; value: root.st ? (typeof root.st.lod_mm === "number" ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
                 ValueTile { label: "Debounce"; value: root.st ? (typeof root.st.debounce_ms === "number" ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
                 ValueTile { label: "Rotation"; value: root.st && root.st.rotation ? root.st.rotation : "" }
             }
         }
+
+        Item { Layout.fillHeight: true }
 
         // The dongle's own settings: it can't be asked for them over the cable.
         ColumnLayout {
