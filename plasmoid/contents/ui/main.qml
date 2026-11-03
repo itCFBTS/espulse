@@ -364,25 +364,20 @@ PlasmoidItem {
         // the sections instead of collecting above the footer.
         Item { Layout.fillHeight: true }
 
+        // A layout can't grow past what fixed-size children allow, so fillWidth here would do nothing:
+        // the whole group has to be the thing that's centered.
         ColumnLayout {
             visible: root.st !== null
             spacing: Kirigami.Units.smallSpacing
-            Layout.fillWidth: true
-            Layout.leftMargin: Kirigami.Units.largeSpacing * 2
-            Layout.rightMargin: Kirigami.Units.largeSpacing * 2
-            // Layouts fill their parent's width by default, which leaves the tiles at the left edge.
+            Layout.alignment: Qt.AlignHCenter
             RowLayout {
                 spacing: Kirigami.Units.smallSpacing
-                Layout.fillWidth: false
-                Layout.alignment: Qt.AlignHCenter
                 ModeTile { text: "Motion Sync"; on: root.st ? root.st.motion_sync === true : false }
                 ModeTile { text: "Angle Snap"; on: root.st ? root.st.angle_snap === true : false }
                 ModeTile { text: "Turbo Mode"; on: root.st ? root.st.turbo === true : false }
             }
             RowLayout {
                 spacing: Kirigami.Units.smallSpacing
-                Layout.fillWidth: false
-                Layout.alignment: Qt.AlignHCenter
                 ValueTile { label: "LOD"; value: root.st ? (typeof root.st.lod_mm === "number" ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
                 ValueTile { label: "Debounce"; value: root.st ? (typeof root.st.debounce_ms === "number" ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
                 ValueTile { label: "Rotation"; value: root.st && root.st.rotation ? root.st.rotation : "" }
