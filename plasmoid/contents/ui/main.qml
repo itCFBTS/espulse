@@ -31,6 +31,8 @@ PlasmoidItem {
     readonly property string cmdUsb: 'for d in /sys/bus/usb/devices/*; do [ "$(cat "$d/idVendor" 2>/dev/null)" = 3710 ] && cat "$d/idProduct"; done | sort'
     // The panel's own colours, from the Plasma style: it can be dark while apps are light, or the reverse.
     readonly property bool darkPanel: Kirigami.ColorUtils.brightnessForColor(Kirigami.Theme.backgroundColor) === Kirigami.ColorUtils.Dark
+    // Three tiles and the gaps between them; the header and dongle section line up with this.
+    readonly property real contentWidth: Kirigami.Units.gridUnit * 18 + Kirigami.Units.smallSpacing * 2
     readonly property color batteryColour: !powerConnected ? Kirigami.Theme.textColor : darkPanel ? "#69f19e" : "#1a7f45"
     // Top-down eS Xlite outline, Breeze symbolic style (recoloured to the theme's text colour).
     readonly property url mouseIcon: Qt.resolvedUrl("../icons/es-xlite.svg")
@@ -199,7 +201,8 @@ PlasmoidItem {
 
     fullRepresentation: ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
-        Layout.minimumWidth: Kirigami.Units.gridUnit * 22
+        Layout.minimumWidth: root.contentWidth + Kirigami.Units.largeSpacing * 4
+        Layout.preferredWidth: Layout.minimumWidth
         Layout.minimumHeight: Kirigami.Units.gridUnit * 18
 
         component Pill: Rectangle {
@@ -280,9 +283,9 @@ PlasmoidItem {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.maximumWidth: root.contentWidth
+            Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: Kirigami.Units.largeSpacing
-            Layout.leftMargin: Kirigami.Units.largeSpacing * 2
-            Layout.rightMargin: Kirigami.Units.largeSpacing * 2
             Kirigami.Icon {
                 source: root.st && root.st.mode === "wireless" ? "network-wireless-symbolic" : "network-wired-symbolic"
                 Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
@@ -391,8 +394,8 @@ PlasmoidItem {
             visible: root.st !== null && root.st.mode === "wireless"
             spacing: Kirigami.Units.smallSpacing
             Layout.fillWidth: true
-            Layout.leftMargin: Kirigami.Units.largeSpacing * 2
-            Layout.rightMargin: Kirigami.Units.largeSpacing * 2
+            Layout.maximumWidth: root.contentWidth
+            Layout.alignment: Qt.AlignHCenter
             Kirigami.Separator { Layout.fillWidth: true }
             Kirigami.Heading { level: 5; text: "eS LINK Dongle"; opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
             InfoRow { label: "Function Button"; value: root.st ? (root.st.dongle_button || "?") : "" }
