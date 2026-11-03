@@ -82,9 +82,12 @@ from *Add Widgets*. In the background it only asks for the battery level every 5
 (two or three read queries), shown over a mouse icon, in green while the cable is connected. Every 10 seconds it also lists USB IDs, which
 sends the mouse nothing, and reads the battery again if they changed. Opening the popup runs
 the full read: all DPI stages, polling rate, the toggles, LOD, debounce, rotation and the
-dongle's settings. To update after pulling
-changes: `kpackagetool6 -t Plasma/Applet -u plasmoid`, then
-`systemctl --user restart plasma-plasmashell`.
+dongle's settings. To update after pulling changes, stop the shell first, which should keep the tray's visibility
+setting for the widget:
+
+```bash
+systemctl --user stop plasma-plasmashell; kpackagetool6 -t Plasma/Applet -u plasmoid; systemctl --user start plasma-plasmashell
+```
 
 ## License
 
