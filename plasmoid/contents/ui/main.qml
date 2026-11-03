@@ -237,6 +237,7 @@ PlasmoidItem {
         component ModeTile: Rectangle {
             property string text
             property bool on: false
+            Layout.minimumWidth: Kirigami.Units.gridUnit * 6
             Layout.preferredWidth: Kirigami.Units.gridUnit * 6
             implicitHeight: modeLabel.implicitHeight + Kirigami.Units.largeSpacing
             radius: Kirigami.Units.cornerRadius
@@ -254,6 +255,7 @@ PlasmoidItem {
         component ValueTile: Rectangle {
             property string label
             property string value
+            Layout.minimumWidth: Kirigami.Units.gridUnit * 6
             Layout.preferredWidth: Kirigami.Units.gridUnit * 6
             implicitHeight: valueColumn.implicitHeight + Kirigami.Units.largeSpacing
             radius: Kirigami.Units.cornerRadius
@@ -368,8 +370,10 @@ PlasmoidItem {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing * 2
             Layout.rightMargin: Kirigami.Units.largeSpacing * 2
+            // Layouts fill their parent's width by default, which leaves the tiles at the left edge.
             RowLayout {
                 spacing: Kirigami.Units.smallSpacing
+                Layout.fillWidth: false
                 Layout.alignment: Qt.AlignHCenter
                 ModeTile { text: "Motion Sync"; on: root.st ? root.st.motion_sync === true : false }
                 ModeTile { text: "Angle Snap"; on: root.st ? root.st.angle_snap === true : false }
@@ -377,6 +381,7 @@ PlasmoidItem {
             }
             RowLayout {
                 spacing: Kirigami.Units.smallSpacing
+                Layout.fillWidth: false
                 Layout.alignment: Qt.AlignHCenter
                 ValueTile { label: "LOD"; value: root.st ? (typeof root.st.lod_mm === "number" ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
                 ValueTile { label: "Debounce"; value: root.st ? (typeof root.st.debounce_ms === "number" ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
