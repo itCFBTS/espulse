@@ -200,7 +200,7 @@ PlasmoidItem {
     fullRepresentation: ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
         Layout.minimumWidth: Kirigami.Units.gridUnit * 22
-        Layout.minimumHeight: Kirigami.Units.gridUnit * 17
+        Layout.minimumHeight: Kirigami.Units.gridUnit * 20
 
         component Pill: Rectangle {
             id: pill
@@ -233,6 +233,40 @@ PlasmoidItem {
             }
         }
 
+        // Flat on purpose: these only show settings, so nothing here should look clickable.
+        component ModeTile: Rectangle {
+            property string text
+            property bool on: false
+            Layout.fillWidth: true
+            implicitHeight: modeLabel.implicitHeight + Kirigami.Units.largeSpacing
+            radius: Kirigami.Units.cornerRadius
+            color: on ? Qt.rgba(Kirigami.Theme.highlightColor.r, Kirigami.Theme.highlightColor.g, Kirigami.Theme.highlightColor.b, 0.3) : "transparent"
+            border.width: on ? 0 : 1
+            border.color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.2)
+            PC3.Label {
+                id: modeLabel
+                anchors.centerIn: parent
+                text: parent.text
+                opacity: parent.on ? 1.0 : 0.7
+            }
+        }
+
+        component ValueTile: Rectangle {
+            property string label
+            property string value
+            Layout.fillWidth: true
+            implicitHeight: valueColumn.implicitHeight + Kirigami.Units.largeSpacing
+            radius: Kirigami.Units.cornerRadius
+            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.07)
+            ColumnLayout {
+                id: valueColumn
+                anchors.centerIn: parent
+                spacing: 0
+                PC3.Label { text: parent.parent.label; opacity: 0.75; Layout.alignment: Qt.AlignHCenter }
+                PC3.Label { text: parent.parent.value; font.bold: true; Layout.alignment: Qt.AlignHCenter }
+            }
+        }
+
         component InfoRow: RowLayout {
             property string label
             property string value
@@ -252,11 +286,29 @@ PlasmoidItem {
                 Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
                 Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
             }
-            Kirigami.Heading { level: 4; text: "Pulsar eS Xlite" }
+            ColumnLayout {
+                spacing: 0
+                Kirigami.Heading { level: 4; text: "Pulsar eS Xlite" }
+                PC3.Label {
+                    visible: root.st !== null
+                    text: root.st ? (root.st.mode === "wireless" ? "Wireless" : "Wired") + " · Profile " + root.st.profile : ""
+                    opacity: 0.7
+                }
+            }
             Item { Layout.fillWidth: true }
-            PC3.Label {
-                text: root.st ? (root.st.mode === "wireless" ? "wireless" : "wired") + " · profile " + root.st.profile : ""
-                opacity: 0.7
+            Kirigami.Icon {
+                visible: root.battery >= 0
+                source: "battery-" + String(Math.round(root.battery / 10) * 10).padStart(3, "0")
+                isMask: true
+                color: root.batteryColour
+                Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
+                Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+            }
+            Kirigami.Heading {
+                visible: root.battery >= 0
+                level: 3
+                text: root.battery + "%"
+                color: root.batteryColour
             }
         }
 
@@ -271,7 +323,7 @@ PlasmoidItem {
             visible: root.st !== null
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignHCenter
-            Kirigami.Heading { level: 5; text: "DPI stages"; opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
+            Kirigami.Heading { level: 5; text: "DPI Stages"; opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: Kirigami.Units.smallSpacing
@@ -291,7 +343,7 @@ PlasmoidItem {
             visible: root.st !== null
             spacing: Kirigami.Units.smallSpacing
             Layout.alignment: Qt.AlignHCenter
-            Kirigami.Heading { level: 5; text: "Polling rate"; opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
+            Kirigami.Heading { level: 5; text: "Polling Rate"; opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
             RowLayout {
                 spacing: Kirigami.Units.smallSpacing
                 Layout.alignment: Qt.AlignHCenter
@@ -308,28 +360,39 @@ PlasmoidItem {
 
         ColumnLayout {
             visible: root.st !== null
-            spacing: Kirigami.Units.smallSpacing / 2
+            spacing: Kirigami.Units.smallSpacing
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing * 2
             Layout.rightMargin: Kirigami.Units.largeSpacing * 2
-            InfoRow { label: "Motion sync"; value: root.st && root.st.motion_sync ? "On" : "Off" }
-            InfoRow { label: "Turbo mode"; value: root.st && root.st.turbo ? "On" : "Off" }
-            InfoRow { label: "Angle snap"; value: root.st && root.st.angle_snap ? "On" : "Off" }
-            InfoRow { label: "LOD"; value: root.st ? (typeof root.st.lod_mm === "number" ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
-            InfoRow { label: "Debounce"; value: root.st ? (typeof root.st.debounce_ms === "number" ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
-            InfoRow { label: "Rotation"; value: root.st && root.st.rotation ? root.st.rotation : "" }
-            InfoRow {
-                visible: root.st && root.st.mode === "wireless"
-                label: "Dongle button · LED"
-                value: root.st ? (root.st.dongle_button || "?") + " · " + (root.st.dongle_led ? "on" : "off") : ""
+            RowLayout {
+                uniformCellSizes: true
+                spacing: Kirigami.Units.smallSpacing
+                Layout.fillWidth: true
+                ModeTile { text: "Motion Sync"; on: root.st ? root.st.motion_sync === true : false }
+                ModeTile { text: "Angle Snap"; on: root.st ? root.st.angle_snap === true : false }
+                ModeTile { text: "Turbo Mode"; on: root.st ? root.st.turbo === true : false }
             }
-            // Battery and power from the same full read, so the plugged-in note can't outlive it.
-            InfoRow {
-                label: "Battery"
-                value: root.st && typeof root.st.battery_percent === "number"
-                    ? root.st.battery_percent + "%" + (root.st.power_connected ? " · plugged in" : "")
-                    : (root.battery >= 0 ? root.battery + "%" : "unknown")
+            RowLayout {
+                uniformCellSizes: true
+                spacing: Kirigami.Units.smallSpacing
+                Layout.fillWidth: true
+                ValueTile { label: "LOD"; value: root.st ? (typeof root.st.lod_mm === "number" ? root.st.lod_mm.toFixed(1) + " mm" : "code " + root.st.lod) : "" }
+                ValueTile { label: "Debounce"; value: root.st ? (typeof root.st.debounce_ms === "number" ? root.st.debounce_ms + " ms" : "code " + root.st.debounce_raw) : "" }
+                ValueTile { label: "Rotation"; value: root.st && root.st.rotation ? root.st.rotation : "" }
             }
+        }
+
+        // The dongle's own settings: it can't be asked for them over the cable.
+        ColumnLayout {
+            visible: root.st !== null && root.st.mode === "wireless"
+            spacing: Kirigami.Units.smallSpacing
+            Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing * 2
+            Layout.rightMargin: Kirigami.Units.largeSpacing * 2
+            Kirigami.Separator { Layout.fillWidth: true }
+            Kirigami.Heading { level: 5; text: "eS LINK Dongle"; opacity: 0.8; Layout.alignment: Qt.AlignHCenter }
+            InfoRow { label: "Function Button"; value: root.st ? (root.st.dongle_button || "?") : "" }
+            InfoRow { label: "Function & DPI LED"; value: root.st && root.st.dongle_led ? "On" : "Off" }
         }
 
         Item { Layout.fillHeight: true }
@@ -338,7 +401,7 @@ PlasmoidItem {
             Layout.alignment: Qt.AlignHCenter
             Layout.bottomMargin: Kirigami.Units.smallSpacing
             PC3.Label {
-                text: root.lastUpdate !== "" ? "updated " + root.lastUpdate : ""
+                text: root.lastUpdate !== "" ? "Updated " + root.lastUpdate : ""
                 opacity: 0.6
             }
             PC3.ToolButton {
