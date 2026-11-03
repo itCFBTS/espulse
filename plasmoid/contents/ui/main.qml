@@ -301,9 +301,18 @@ PlasmoidItem {
                 }
             }
             Item { Layout.fillWidth: true }
+            // Separate from the battery icon: a bolt drawn inside it vanishes into a full battery's fill.
+            Kirigami.Icon {
+                visible: root.battery >= 0 && root.powerConnected
+                source: Qt.resolvedUrl("../icons/bolt.svg")
+                isMask: true
+                color: root.batteryColour
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+            }
             Kirigami.Icon {
                 visible: root.battery >= 0
-                source: "battery-" + String(Math.round(root.battery / 10) * 10).padStart(3, "0") + (root.powerConnected ? "-charging" : "")
+                source: "battery-" + String(Math.round(root.battery / 10) * 10).padStart(3, "0")
                 isMask: true
                 color: root.batteryColour
                 Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
@@ -389,9 +398,11 @@ PlasmoidItem {
 
         Item { Layout.fillHeight: true }
 
-        // The dongle's own settings: it can't be asked for them over the cable.
+        // The dongle's own settings: it can't be asked for them over the cable. Hidden by opacity so it
+        // keeps its space and nothing above moves when the cable goes in or comes out.
         ColumnLayout {
-            visible: root.st !== null && root.st.mode === "wireless"
+            visible: root.st !== null
+            opacity: root.st && root.st.mode === "wireless" ? 1 : 0
             spacing: Kirigami.Units.smallSpacing
             Layout.fillWidth: true
             Layout.maximumWidth: root.contentWidth
