@@ -79,7 +79,7 @@ icon itself comes from inside the widget).
 
 Then enable **espulse** under the system tray's *Configure System Tray → Entries*, or add it
 from *Add Widgets*. In the background it only asks for the battery level every 5 minutes
-(two or three read queries), shown over a mouse icon, in green while the cable is connected. Every 10 seconds it also lists USB IDs, which
+(two or three read queries), shown over a mouse icon, in green while the cable is connected, and in the theme's warning and error colours at 20% and 10%. Every 10 seconds it also lists USB IDs, which
 sends the mouse nothing, and reads the battery again if they changed. Opening the popup runs
 the full read: all DPI stages, polling rate, the toggles, LOD, debounce, rotation and the
 dongle's settings. To update after pulling changes, stop the shell first, which should keep the tray's visibility

@@ -33,7 +33,12 @@ PlasmoidItem {
     readonly property bool darkPanel: Kirigami.ColorUtils.brightnessForColor(Kirigami.Theme.backgroundColor) === Kirigami.ColorUtils.Dark
     // Three tiles and the gaps between them; the dongle section lines up with this.
     readonly property real contentWidth: Kirigami.Units.gridUnit * 18 + Kirigami.Units.smallSpacing * 2
-    readonly property color batteryColour: !powerConnected ? Kirigami.Theme.textColor : darkPanel ? "#69f19e" : "#1a7f45"
+    readonly property color batteryColour: {
+        if (powerConnected) return darkPanel ? "#69f19e" : "#1a7f45"
+        if (battery >= 0 && battery <= 10) return Kirigami.Theme.negativeTextColor
+        if (battery >= 0 && battery <= 20) return Kirigami.Theme.neutralTextColor
+        return Kirigami.Theme.textColor
+    }
     // Top-down eS Xlite outline, Breeze symbolic style (recoloured to the theme's text colour).
     readonly property url mouseIcon: Qt.resolvedUrl("../icons/es-xlite.svg")
 
